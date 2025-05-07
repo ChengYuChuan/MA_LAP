@@ -23,6 +23,28 @@ from PIL import Image
 
 logger = get_logger('LAPNetTrainer')
 
+class EarlyStopping:
+    """Simple early stopping based on validation score."""
+    def __init__(self, patience=20, higher_is_better=True):
+        self.patience = patience
+        self.higher_is_better = higher_is_better
+        self.best_score = None
+        self.bad_epochs = 0
+
+    def step(self, current_score):
+        if self.best_score is None:
+            self.best_score = current_score
+            return False
+
+        improvement = (current_score > self.best_score) if self.higher_is_better else (current_score < self.best_score)
+
+        if improvement:
+            self.best_score = current_score
+            self.bad_epochs = 0
+        else:
+            self.bad_epochs += 1
+
+        return self.bad_epochs >= self.patience
 
 class LAPNetTrainer:
     """trainer.
@@ -60,33 +82,31 @@ class LAPNetTrainer:
 
     def __init__(self, model, optimizer, lr_scheduler, loss_criterion, eval_criterion, loaders, checkpoint_dir,
                  max_num_epochs, max_num_iterations, validate_after_iters=200, log_after_iters=100, validate_iters=None,
-                 num_iterations=1, num_epoch=0, eval_score_higher_is_better=False, tensorboard_formatter=None,
+                 num_iterations=1, num_epoch=0, eval_score_higher_is_better=True, tensorboard_formatter=None,
                  skip_train_validation=False, resume=None, pre_trained=None, max_val_images=10, **kwargs):
-        self.scaler = GradScaler()
-        self.max_val_images = max_val_images
+
         self.model = model
         self.optimizer = optimizer
         self.scheduler = lr_scheduler
         self.loss_criterion = loss_criterion
         self.eval_criterion = eval_criterion
         self.loaders = loaders
-
         self.checkpoint_dir = checkpoint_dir
         self.max_num_epochs = max_num_epochs
         self.max_num_iterations = max_num_iterations
         self.validate_after_iters = validate_after_iters
         self.log_after_iters = log_after_iters
         self.validate_iters = validate_iters
+        self.num_iterations = num_iterations
+        self.num_epochs = num_epoch
+        self.skip_train_validation = skip_train_validation
+        self.tensorboard_formatter = tensorboard_formatter
+        self.max_val_images = max_val_images
+        self.scaler = GradScaler()
         self.eval_score_higher_is_better = eval_score_higher_is_better
 
         logger.info(model)
-        logger.info(f'eval_score_higher_is_better: {eval_score_higher_is_better}')
-
-        # initialize the best_eval_score
-        if eval_score_higher_is_better:
-            self.best_eval_score = float('-inf')
-        else:
-            self.best_eval_score = float('+inf')
+        logger.info(f"eval_score_higher_is_better: {eval_score_higher_is_better}")
 
         self.writer = SummaryWriter(
             log_dir=os.path.join(
@@ -95,81 +115,74 @@ class LAPNetTrainer:
             )
         )
 
-        assert tensorboard_formatter is not None, 'TensorboardFormatter must be provided'
-        self.tensorboard_formatter = tensorboard_formatter
+        if eval_score_higher_is_better:
+            self.best_eval_score = float('-inf')
+        else:
+            self.best_eval_score = float('inf')
 
-        self.num_iterations = num_iterations
-        self.num_epochs = num_epoch
-        self.skip_train_validation = skip_train_validation
-
-        if resume is not None:
-            logger.info(f"Loading checkpoint '{resume}'...")
+        if resume:
+            logger.info(f"Resuming from checkpoint '{resume}'")
             state = load_checkpoint(resume, self.model, self.optimizer)
-            logger.info(
-                f"Checkpoint loaded from '{resume}'. Epoch: {state['num_epochs']}.  Iteration: {state['num_iterations']}. "
-                f"Best val score: {state['best_eval_score']}."
-            )
             self.best_eval_score = state['best_eval_score']
             self.num_iterations = state['num_iterations']
             self.num_epochs = state['num_epochs']
             self.checkpoint_dir = os.path.split(resume)[0]
-        elif pre_trained is not None:
-            logger.info(f"Logging pre-trained model from '{pre_trained}'...")
+        elif pre_trained:
+            logger.info(f"Loading pre-trained model from '{pre_trained}'")
             load_checkpoint(pre_trained, self.model, None)
             if not self.checkpoint_dir:
                 self.checkpoint_dir = os.path.split(pre_trained)[0]
 
+        # Early stopping
+        self.early_stopper = EarlyStopping(patience=5, higher_is_better=eval_score_higher_is_better)
+
+        # Dynamic loss scheduling config
+        self.total_loss_initial_weight = 1.0
+        self.total_loss_final_weight = 0.3
+        self.penalty_initial_weight = 0.2
+        self.penalty_final_weight = 0.5
+        self.decay_start_iter = 25
+        self.decay_end_iter = int(self.max_num_iterations * 0.8)
+
     def fit(self):
         for _ in range(self.num_epochs, self.max_num_epochs):
-            # train for one epoch
             should_terminate = self.train()
-
             if should_terminate:
-                logger.info('Stopping criterion is satisfied. Finishing training')
+                logger.info('Early stopping triggered or max iterations reached.')
                 return
-
             self.num_epochs += 1
-        logger.info(f"Reached maximum number of epochs: {self.max_num_epochs}. Finishing training...")
 
     def train(self):
-        """Trains the model for 1 epoch using mixed precision and permutation-aware matching."""
         train_losses = RunningAverage()
         train_accuracies = RunningAverage()
         self.model.train()
 
         for batch in self.loaders['train']:
-            if self.num_iterations % 10 == 0:
-                logger.info(f'Training iteration [{self.num_iterations}/{self.max_num_iterations}]. '
-                            f'Epoch [{self.num_epochs}/{self.max_num_epochs - 1}]')
+            if self.num_iterations > self.max_num_iterations:
+                return True
+
+            self._adjust_loss_weights()  # 動態調整 total_loss_weight / penalty_weight
 
             (cubes, paths, perms, inv_perms) = batch
             cubes = cubes.to(next(self.model.parameters()).device)
-
             inv_perm_A, inv_perm_B = inv_perms[0], inv_perms[1]
 
-            # === 混合精度 Forward Pass ===
             with autocast():
                 multi_feats = self.model(cubes, return_layers=[-2, -1])
-                loss, (row_ind, col_ind) = self.loss_criterion(
-                    multi_feats, inv_perm_A=inv_perm_A, inv_perm_B=inv_perm_B
-                )
+                loss, (row_ind, col_ind) = self.loss_criterion(multi_feats, inv_perm_A=inv_perm_A,
+                                                               inv_perm_B=inv_perm_B)
 
             accuracy = np.mean((row_ind == col_ind).astype(np.float32))
-            worm_A = os.path.basename(paths[0])
-            worm_B = os.path.basename(paths[1])
-            logger.info(f"Pairing: {worm_A} vs {worm_B} | Loss: {loss.item():.4f} | Accuracy: {accuracy:.4f}")
-            if self.num_iterations % self.log_after_iters == 0:
-                # Log matching heatmap to TensorBoard
-                predicted_matching = torch.zeros((len(row_ind), len(col_ind)), device=loss.device)
-                predicted_matching[row_ind, col_ind] = 1.0
-                self._log_matching_heatmap(predicted_matching,
-                                           title=f"Train Matching Heatmap @iter {self.num_iterations}",
-                                           tag_prefix="train/matching_heatmap")
-                self._log_matching_similarity(predicted_matching, tag_prefix="train/matching_similarity")
+
+            if self.num_iterations % 10 == 0:
+                worm_A = os.path.basename(paths[0])
+                worm_B = os.path.basename(paths[1])
+                logger.info(f"Pairing: {worm_A} vs {worm_B} | Loss: {loss.item():.4f} | Accuracy: {accuracy:.4f}")
 
             self.writer.add_scalar("train/loss", loss.item(), self.num_iterations)
             self.writer.add_scalar("train/accuracy_identity_match", accuracy, self.num_iterations)
 
+            # 混合精度 backward
             self.optimizer.zero_grad()
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
@@ -180,6 +193,7 @@ class LAPNetTrainer:
 
             torch.cuda.empty_cache()
 
+            # === 每validate_after_iters次做一次Validation
             if self.num_iterations % self.validate_after_iters == 0:
                 self.model.eval()
                 val_accuracy = self.validate()
@@ -191,40 +205,35 @@ class LAPNetTrainer:
                     self.scheduler.step()
 
                 self._log_lr()
+
                 is_best = self._is_best_eval_score(val_accuracy)
                 self._save_checkpoint(is_best)
 
+                # Early stopping
+                if self.early_stopper.step(val_accuracy):
+                    logger.info('Early stopping condition met.')
+                    return True
+
+            # === 每log_after_iters次做一次 logging
             if self.num_iterations % self.log_after_iters == 0:
-                logger.info(f'Training stats. Loss: {train_losses.avg:.4f} | Accuracy: {train_accuracies.avg:.4f}')
+                # logger.info(f"Training stats. Loss: {train_losses.avg:.4f} | Accuracy: {train_accuracies.avg:.4f}")
                 self._log_stats('train', train_losses.avg, train_accuracies.avg)
 
-            if self.should_stop():
-                return True
+                # Log matching matrix, cosine similarity, random pair prediction
+                perm_A, perm_B = perms[0], perms[1]
+                self._log_random_pair_predictions(cubes, row_ind, col_ind, inv_perm_A, inv_perm_B)
+
+                predicted_matching = torch.zeros((len(row_ind), len(col_ind)), device=loss.device)
+                predicted_matching[row_ind, col_ind] = 1.0
+                self._log_matching_similarity(predicted_matching)
+                self._log_matching_heatmap(predicted_matching)
 
             self.num_iterations += 1
 
         return False
 
-    def should_stop(self):
-        """
-        Training will terminate if maximum number of iterations is exceeded or the learning rate drops below
-        some predefined threshold (1e-6 in our case)
-        """
-        if self.max_num_iterations < self.num_iterations:
-            logger.info(f'Maximum number of iterations {self.max_num_iterations} exceeded.')
-            return True
-
-        min_lr = 1e-6
-        lr = self.optimizer.param_groups[0]['lr']
-        if lr < min_lr:
-            logger.info(f'Learning rate below the minimum {min_lr}.')
-            return True
-
-        return False
-
     def validate(self):
         logger.info('Validating...')
-
         val_losses = RunningAverage()
         val_accuracies = RunningAverage()
 
@@ -238,90 +247,81 @@ class LAPNetTrainer:
 
             for i, (cubes, paths, perms, inv_perms) in enumerate(tqdm(self.loaders['val'])):
                 cubes = cubes.to(next(self.model.parameters()).device)
-
                 inv_perm_A, inv_perm_B = inv_perms[0], inv_perms[1]
 
-                # 混合精度推論
                 with autocast():
                     multi_feats = self.model(cubes, return_layers=[-2, -1])
-                    loss, (row_ind, col_ind) = self.loss_criterion(
-                        multi_feats, inv_perm_A=inv_perm_A, inv_perm_B=inv_perm_B
-                    )
+                    loss, (row_ind, col_ind) = self.loss_criterion(multi_feats, inv_perm_A=inv_perm_A,
+                                                                   inv_perm_B=inv_perm_B)
+
+                val_losses.update(loss.item(), 1)
+                accuracy = np.mean((row_ind == col_ind).astype(np.float32))
+                val_accuracies.update(accuracy, 1)
+
+                # 只在第一個 batch log validation matching
                 if i == 0:
                     predicted_matching = torch.zeros((len(row_ind), len(col_ind)), device=loss.device)
                     predicted_matching[row_ind, col_ind] = 1.0
-                    self._log_matching_heatmap(predicted_matching,
-                                               title=f"Validation Matching Heatmap @iter {self.num_iterations}",
-                                               tag_prefix="val/matching_heatmap")
                     self._log_matching_similarity(predicted_matching, tag_prefix="val/matching_similarity")
-
-                val_losses.update(loss.item(), 1)
-
-                # ✅ 正確地計算 Validation Accuracy
-                accuracy = np.mean((row_ind == col_ind).astype(np.float32))
-                val_accuracies.update(accuracy, 1)
+                    self._log_matching_heatmap(predicted_matching, title="Validation Matching Heatmap",
+                                               tag_prefix="val/matching_heatmap")
+                    perm_A, perm_B = perms[0], perms[1]
+                    self._log_random_pair_predictions(cubes, row_ind, col_ind, inv_perm_A, inv_perm_B)
 
                 if self.validate_iters is not None and self.validate_iters <= i:
                     break
 
-        logger.info(f'Validation finished. Loss: {val_losses.avg:.4f}. Accuracy: {val_accuracies.avg:.4f}')
+        logger.info(f"Validation finished. Loss: {val_losses.avg:.4f}. Accuracy: {val_accuracies.avg:.4f}")
         self._log_stats('val', val_losses.avg, val_accuracies.avg)
 
-        return val_accuracies.avg  # ✅ Return validation accuracy 作為 eval score
+        return val_accuracies.avg
 
-    def _is_best_eval_score(self, eval_score: float) -> bool:
-        # 這裡假設 accuracy 越高越好
-        is_best = eval_score > self.best_eval_score
+    def _adjust_loss_weights(self):
+        progress = 0.0
+        if self.num_iterations > self.decay_start_iter:
+            progress = (self.num_iterations - self.decay_start_iter) / (self.decay_end_iter - self.decay_start_iter)
+            progress = min(max(progress, 0.0), 1.0)
 
-        if is_best:
-            logger.info(f'Saving new best model. Validation accuracy improved to {eval_score:.4f}')
-            self.best_eval_score = eval_score
+        total_loss_weight = self.total_loss_initial_weight * (1 - progress) + self.total_loss_final_weight * progress
+        penalty_weight = self.penalty_initial_weight * (1 - progress) + self.penalty_final_weight * progress
 
-        return is_best
+        self.loss_criterion.set_total_loss_weight(total_loss_weight)
+        self.loss_criterion.set_penalty_weight(penalty_weight)
 
-    def _save_checkpoint(self, is_best: bool):
-        # remove `module` prefix from layer names when using `nn.DataParallel`
-        # see: https://discuss.pytorch.org/t/solved-keyerror-unexpected-key-module-encoder-embedding-weight-in-state-dict/1686/20
-        if isinstance(self.model, nn.DataParallel):
-            state_dict = self.model.module.state_dict()
-        else:
-            state_dict = self.model.state_dict()
-
+    def _save_checkpoint(self, is_best):
         last_file_path = os.path.join(self.checkpoint_dir, 'last_checkpoint.pytorch')
         logger.info(f"Saving checkpoint to '{last_file_path}'")
-
         save_checkpoint({
             'num_epochs': self.num_epochs + 1,
             'num_iterations': self.num_iterations,
-            'model_state_dict': state_dict,
+            'model_state_dict': self.model.state_dict(),
             'best_eval_score': self.best_eval_score,
             'optimizer_state_dict': self.optimizer.state_dict(),
         }, is_best, checkpoint_dir=self.checkpoint_dir)
+
+    def _is_best_eval_score(self, eval_score):
+        is_best = eval_score > self.best_eval_score if self.eval_score_higher_is_better else eval_score < self.best_eval_score
+        if is_best:
+            logger.info(f"Saving new best model. Validation score improved to {eval_score:.4f}")
+            self.best_eval_score = eval_score
+        return is_best
+
+    def _log_stats(self, phase, loss_avg, accuracy_avg):
+        self.writer.add_scalar(f'{phase}_loss_avg', loss_avg, self.num_iterations)
+        self.writer.add_scalar(f'{phase}_accuracy_avg', accuracy_avg, self.num_iterations)
 
     def _log_lr(self):
         lr = self.optimizer.param_groups[0]['lr']
         self.writer.add_scalar('learning_rate', lr, self.num_iterations)
 
-    def _log_stats(self, phase: str, loss_avg: float, accuracy_avg: float):
-        tag_value = {
-            f'{phase}_loss_avg': loss_avg,
-            f'{phase}_accuracy_avg': accuracy_avg
-        }
-
-        for tag, value in tag_value.items():
-            self.writer.add_scalar(tag, value, self.num_iterations)
-
     def _log_params(self):
         logger.info('Logging model parameters and gradients')
         for name, value in self.model.named_parameters():
             self.writer.add_histogram(name, value.data.cpu().numpy(), self.num_iterations)
-            self.writer.add_histogram(name + '/grad', value.grad.data.cpu().numpy(), self.num_iterations)
+            if value.grad is not None:
+                self.writer.add_histogram(name + '/grad', value.grad.data.cpu().numpy(), self.num_iterations)
 
     def _log_matching_similarity(self, predicted_matching, tag_prefix="train/matching_similarity"):
-        """
-        Compute cosine similarity between predicted matching and identity matrix,
-        and log it to TensorBoard.
-        """
         device = predicted_matching.device
         num_cells = predicted_matching.shape[0]
 
@@ -333,14 +333,6 @@ class LAPNetTrainer:
         self.writer.add_scalar(tag_prefix, cosine_sim, self.num_iterations)
 
     def _log_matching_heatmap(self, predicted_matching, title="Matching Heatmap", tag_prefix="train/matching_heatmap"):
-        """
-        Logs the permutation matrix (predicted matching) as a heatmap to TensorBoard.
-
-        Args:
-            predicted_matching (torch.Tensor): [N, N] matching matrix with 1s at matched indices
-            title (str): Title to display on the heatmap
-            tag_prefix (str): TensorBoard tag prefix
-        """
         fig, ax = plt.subplots(figsize=(6, 6))
         ax.imshow(predicted_matching.detach().cpu().numpy(), cmap='viridis', interpolation='nearest')
         ax.set_title(title)
@@ -348,7 +340,6 @@ class LAPNetTrainer:
         ax.set_ylabel("Cell Index (Worm A)")
         plt.tight_layout()
 
-        # Convert figure to TensorBoard compatible format
         buf = BytesIO()
         plt.savefig(buf, format='png')
         buf.seek(0)
@@ -356,13 +347,53 @@ class LAPNetTrainer:
         transform = T.ToTensor()
         image_tensor = transform(image)
 
-        # Log to TensorBoard
         self.writer.add_image(tag_prefix, image_tensor, self.num_iterations)
         plt.close(fig)
 
-        @staticmethod
-        def _batch_size(input: torch.Tensor) -> int:
-            if isinstance(input, list) or isinstance(input, tuple):
-                return input[0].size(0)
-            else:
-                return input.size(0)
+    def _log_random_pair_predictions(
+            self, cubes, row_ind, col_ind,
+            inv_perm_A, inv_perm_B,
+            tag_prefix="train/pair_predictions"):
+
+        batch_size, num_cells, _, _, _, _ = cubes.shape
+        assert batch_size == 2, "Expect batch size = 2 for worm A and worm B"
+
+        # === Step 1: 還原 A / B 細胞的原始順序 ===
+        cubes_A = cubes[0][inv_perm_A]  # shape: (558, 1, D, H, W)
+        cubes_B = cubes[1][inv_perm_B]
+
+        # === Step 2: 隨機取 5 組配對進行可視化 ===
+        rs = np.random.RandomState(self.num_iterations)
+        sample_indices = rs.choice(len(row_ind), size=5, replace=False)
+
+        fig, axes = plt.subplots(5, 2, figsize=(6, 15))
+        for ax_row, idx in zip(axes, sample_indices):
+            i = row_ind[idx]  # 原始順序中的 A 細胞 index
+            j = col_ind[idx]  # 原始順序中的 B 細胞 index
+
+            is_correct = (i == j)  # 判斷是否配對正確（identity match）
+
+            # === 畫出對應的切片影像 ===
+            for k, (cube_tensor, cell_idx) in enumerate([(cubes_A, i), (cubes_B, j)]):
+                img = cube_tensor[cell_idx, 0]  # NDHW → take channel 0
+                middle_slice = img[img.shape[0] // 2, :, :].cpu().numpy()
+                ax = ax_row[k]
+                ax.imshow(middle_slice, cmap='gray')
+                ax.axis('off')
+                if k == 0:
+                    ax.set_title(f'Worm A Cell {i}')
+                else:
+                    ax.set_title(f'Worm B Cell {j}\n{"Correct" if is_correct else "Wrong"}')
+
+        plt.tight_layout()
+
+        # === Log to TensorBoard ===
+        buf = BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        image = Image.open(buf)
+        transform = T.ToTensor()
+        image_tensor = transform(image)
+
+        self.writer.add_image(tag_prefix, image_tensor, self.num_iterations)
+        plt.close(fig)

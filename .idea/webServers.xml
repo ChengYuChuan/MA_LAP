@@ -3,9 +3,16 @@
   <component name="WebServers">
     <option name="servers">
       <webServer id="c8a014bb-0906-405b-997b-f5717f9d8455" name="CLserver">
-        <fileTransfer rootFolder="/home/students/cheng" accessType="SFTP" host="cluster.cl.uni-heidelberg.de" port="22" sshConfigId="b4b3af81-3e8a-4da0-8064-67c6bfd8daaf" sshConfig="cheng@cluster.cl.uni-heidelberg.de:22 password">
+        <fileTransfer rootFolder="/home/students/cheng" accessType="SFTP" host="cluster.cl.uni-heidelberg.de" port="22" sshConfigId="cd1ae962-c604-482f-8197-42536bedec72" sshConfig="CLCluster">
           <advancedOptions>
             <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+      <webServer id="6f574712-96e5-49f4-ab51-d7cbfa7931b2" name="Helix">
+        <fileTransfer rootFolder="/home/hd/hd_hd/hd_uu312" accessType="SFTP" host="helix.bwservices.uni-heidelberg.de" port="22" sshConfigId="eb0ea3b8-a6ef-46f1-acf7-78a235b0af6f" sshConfig="Helix" keyPair="true">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
           </advancedOptions>
         </fileTransfer>
       </webServer>

@@ -12,7 +12,6 @@ import warnings
 
 logger = get_logger('Loss')
 
-
 def flatten(tensor):
     """Flattens a given tensor such that the channel axis is first.
     The shapes are transformed as follows:
@@ -26,7 +25,6 @@ def flatten(tensor):
     transposed = tensor.permute(axis_order)
     # Flatten: (C, N, D, H, W) -> (C, N * D * H * W)
     return transposed.contiguous().view(C, -1)
-
 
 def compute_per_channel_dice(input, target, epsilon=1e-6, weight=None):
     """
@@ -78,7 +76,7 @@ class LAPSolver(torch.autograd.Function):
     def backward(ctx, unary_gradients: torch.Tensor):
         assert ctx.unaries.shape == unary_gradients.shape
 
-        lambda_val = ctx.params.get("lambda", 20)
+        lambda_val = ctx.params.get("lambda", 15)
         epsilon_val = 1e-6
 
         unaries = ctx.unaries
@@ -148,14 +146,16 @@ class DifferentiableHungarianLoss(nn.Module):
 
         return loss, (row_ind, col_ind)
 
-
 class MultiLayerHungarianLoss(nn.Module):
-    def __init__(self, layer_weights, base_loss_fn=None, penalty_weight=0.1, penalty_mode="global"):
+    def __init__(self, layer_weights, base_loss_fn=None,
+                 penalty_weight=0.1, penalty_mode="global",
+                 total_loss_weight=1.0):
         super().__init__()
         self.layer_weights = layer_weights
         self.base_loss_fn = base_loss_fn or DifferentiableHungarianLoss()
         self.penalty_weight = penalty_weight
         self.penalty_mode = penalty_mode  # "none", "per_layer", "global"
+        self.total_loss_weight = total_loss_weight  # 新增: 控制total_loss的重要性
 
     def forward(self, multi_layer_latents, inv_perm_A=None, inv_perm_B=None):
         total_loss = 0
@@ -168,7 +168,6 @@ class MultiLayerHungarianLoss(nn.Module):
             match_info = info  # 只記最後一層的配對資訊
 
             if self.penalty_mode == "per_layer":
-                # 每層個別加 penalty
                 row_ind, col_ind = info
                 num_cells = len(row_ind)
                 device = layer_latent.device
@@ -181,7 +180,6 @@ class MultiLayerHungarianLoss(nn.Module):
                 similarity_penalty += (1.0 - cosine_sim)
 
         if self.penalty_mode == "global" and match_info is not None:
-            # 只在最後一層加 penalty
             row_ind, col_ind = match_info
             num_cells = len(row_ind)
             device = multi_layer_latents[0].device
@@ -194,15 +192,24 @@ class MultiLayerHungarianLoss(nn.Module):
             similarity_penalty = (1.0 - cosine_sim)
 
         if self.penalty_mode in ["per_layer", "global"]:
-            final_loss = total_loss + self.penalty_weight * similarity_penalty
+            # 加入 dynamic weighting
+            final_loss = self.total_loss_weight * total_loss + self.penalty_weight * similarity_penalty
         else:
-            final_loss = total_loss  # 如果 penalty_mode = "none"，就不加 penalty
+            final_loss = self.total_loss_weight * total_loss
 
         return final_loss, match_info
 
+    # 新增：允許在train loop中動態調整loss weight
+    def set_total_loss_weight(self, new_weight):
+        self.total_loss_weight = new_weight
 
-def get_loss_criterion(name, weight=None, ignore_index=None, skip_last_target=False, pos_weight=None, window_size=7,
-                       alpha=0.2, **loss_kwargs):
+    def set_penalty_weight(self, new_weight):
+        self.penalty_weight = new_weight
+
+
+
+def get_loss_criterion(name, weight=None, ignore_index=None, skip_last_target=False, pos_weight=None, window_size=7, alpha=0.2, **loss_kwargs):
+
     """
     Returns the loss function based on provided parameters.
     :param name: (str) Name of the loss function.
@@ -236,7 +243,6 @@ def get_loss_criterion(name, weight=None, ignore_index=None, skip_last_target=Fa
         loss = loss.cuda()
 
     return loss
-
 
 def _create_loss(name, weight, ignore_index, pos_weight, alpha=0.2, window_size=5, return_msssim=False, **loss_kwargs):
     logger.info(f"Creating loss function: {name}")

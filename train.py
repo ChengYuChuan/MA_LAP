@@ -33,7 +33,7 @@ window_size = int(window_size)
 # Learning_Rate = 0.001
 # alpha = 0.8
 
-logger = get_logger('LAPNetTrainer')
+logger = get_logger('Trainer')
 
 random_state = np.random.RandomState(66)  # 這樣才是正確的隨機狀態
 transform_pipeline = transforms.Compose([
@@ -46,7 +46,7 @@ transform_pipeline = transforms.Compose([
 loaders = get_train_loaders(transform=transform_pipeline,num_workers=2, batch_size= 2) # training setting
 
 
-folder_path = "/content/drive/MyDrive/Masterarbeit Code/MergedCubes32"
+folder_path = "/home/hd/hd_hd/hd_uu312/MergedCubes32"
 train_dataset = CubeDataset(folder_path, transform=transform_pipeline, split="train")
 val_dataset = CubeDataset(folder_path, transform=transform_pipeline, split="val")
 
@@ -167,7 +167,7 @@ def count_parameters(model):
 model = LatentEncoder()
 
 # 載入預訓練 autoencoder 的 state_dict
-full_state = torch.load('/content/drive/My Drive/Masterarbeit Code/LAP path/CheckPoint_BS2_RBPNI_32_3Layers_CD_Cube32_L1/best_checkpoint.pytorch', map_location='cpu')
+full_state = torch.load('/home/hd/hd_hd/hd_uu312/LAP path/CheckPoint_BS2_RBPNI_32_3Layers_CD_Cube32_L1/best_checkpoint.pytorch', map_location='cpu')
 ae_model_state = full_state['model_state_dict']
 
 # 過濾出 encoder 部分
@@ -185,21 +185,20 @@ print("✅ 成功只載入 encoder 權重！")
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 model.to(device)
 
-
 num_params = count_parameters(model)
 print(f"Total number of trainable parameters: {num_params}")
 
 # --- Loss ---
 # loss_criterion = get_loss_criterion(name="DifferentiableHungarianLoss").to(device)
 loss_criterion = get_loss_criterion(name='MultiLayerHungarianLoss',
-                                    layer_weights=[0.3, 0.7],
-                                    penalty_weight=0.1,
+                                    layer_weights=[0.2, 0.8],
+                                    penalty_weight=0.35,
                                     penalty_mode="global" ).to(device)
 # --- Evaluation ---
 # eval_criterion = get_loss_criterion(name="DifferentiableHungarianLoss").to(device)
 eval_criterion = get_loss_criterion(name='MultiLayerHungarianLoss',
-                                    layer_weights=[0.3, 0.7],
-                                    penalty_weight=0.1,
+                                    layer_weights=[0.2, 0.8],
+                                    penalty_weight=0.35,
                                     penalty_mode="global" ).to(device)
 
 # --- Optimizer ---
@@ -208,20 +207,40 @@ optimizer = create_optimizer('Adam', model, learning_rate=Learning_Rate, weight_
 # optimizer = create_optimizer('SGD', model, learning_rate=0.0001, weight_decay=0.00001)
 
 # --- Scheduler ---
-lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=10, factor=0.5, min_lr=0.00001) # 每15個epoch衰減學習率
+lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=1, factor=0.5, min_lr=0.00001) # 每15個epoch衰減學習率
 # lr_scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=0.000005)
 
 
 tensorboard_formatter = TensorboardFormatter(log_channelwise=True)
 
 # Batch = 2
+# trainer_config = {
+#   "checkpoint_dir" : "/content/drive/MyDrive/Masterarbeit Code/LAP CheckPoint 15Lambda035penalty",
+#   "validate_after_iters" : 22, # usually it's half of one epoch iterations
+#   "log_after_iters" : 11, # usually it's half of validate_after_iters
+#   "max_num_epochs" : 10,
+#   "max_num_iterations" : 880 # training data: 196, 196/batch size * max epoch= max iteration
+#   }
+import math
+
+# 假設你總共有 196 組資料，其中 90% 用於訓練
+total_data = 196
+train_ratio = 0.9
+batch_size = 2
+num_epochs = 15
+
+# 動態計算 iterations
+train_data = int(total_data * train_ratio)  # 176
+iters_per_epoch = math.ceil(train_data / batch_size)  # 88
+max_num_iterations = iters_per_epoch * num_epochs  # 880
+
 trainer_config = {
-  "checkpoint_dir" : "/content/drive/MyDrive/Masterarbeit Code/LAP CheckPoint 20Lambda01penalty",
-  "validate_after_iters" : 20, # usually it's half of one epoch iterations
-  "log_after_iters" : 10, # usually it's half of validate_after_iters
-  "max_num_epochs" : 10,
-  "max_num_iterations" : 980 # training data: 196, 196/batch size * max epoch= max iteration
-  }
+    "checkpoint_dir": "/content/drive/MyDrive/Masterarbeit Code/LAP CheckPoint 15Lambda035penalty",
+    "validate_after_iters": iters_per_epoch // 4,  # 每 1/2 個 epoch 驗證一次 → 22
+    "log_after_iters": iters_per_epoch // 8,       # 每 1/4 個 epoch logging → 11
+    "max_num_epochs": num_epochs,
+    "max_num_iterations": max_num_iterations       # 880
+}
 
 trainer = LAPNetTrainer(model=model, optimizer=optimizer, lr_scheduler=lr_scheduler, loss_criterion=loss_criterion,
                        eval_criterion=eval_criterion, loaders=loaders, tensorboard_formatter=tensorboard_formatter,
