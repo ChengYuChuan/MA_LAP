@@ -28,7 +28,7 @@ class Standardize:
             max_val = m.max()
             m = (m - min_val) / (max_val - min_val + self.eps)
 
-        return standardized
+        return m
 
 class RandomFlip:
     """
