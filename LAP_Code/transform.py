@@ -18,9 +18,10 @@ class Standardize:
         if isinstance(m, torch.Tensor):
             m = m.numpy()
 
-        mean = np.mean(m)
-        std = np.std(m)
-        standardized = (m - mean) / np.clip(std, a_min=self.eps, a_max=None)
+        if self.z_score:
+            mean = self.mean if self.mean is not None else np.mean(m)
+            std = self.std if self.std is not None else np.std(m)
+            m = (m - mean) / np.clip(std, a_min=self.eps, a_max=None)
 
         if self.min_max:
             min_val = standardized.min()
