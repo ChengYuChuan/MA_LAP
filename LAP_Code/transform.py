@@ -5,6 +5,35 @@ import numpy as np
 
 
 class Standardize:
+    """
+        A standardization transformer for 3D data, supporting optional Z-score and/or Min-Max normalization.
+
+        This class is designed for preprocessing 3D voxel-based data, such as cell images or medical volumes.
+        It supports:
+        - Per-sample (per-cube) automatic Z-score normalization
+        - Per-sample Min-Max normalization to scale data into [0, 1]
+        - Optional fixed mean and std for consistent dataset-level normalization
+
+        Args:
+            z_score (bool): Whether to apply Z-score normalization. Default is True.
+            min_max (bool): Whether to apply Min-Max normalization. Default is True.
+            mean (float or None): If specified, uses this value as the mean. Otherwise, computed from the input.
+            std (float or None): If specified, uses this value as the std. Otherwise, computed from the input.
+            eps (float): Small value added to avoid division by zero. Default is 1e-10.
+
+        Returns:
+            np.ndarray: A standardized numpy array with the same shape as the input.
+
+        Examples:
+            >>> transform = Standardize(z_score=True, min_max=False)
+            >>> output = transform(input_cube)
+
+            >>> transform = Standardize(z_score=False, min_max=True)
+            >>> output = transform(input_cube)
+
+            >>> transform = Standardize(z_score=True, min_max=True, mean=0.5, std=0.1)
+            >>> output = transform(input_cube)
+        """
     def __init__(self, z_score=True, min_max=True, mean=None, std=None, eps=1e-10, **kwargs):
         self.z_score = z_score
         self.min_max = min_max
