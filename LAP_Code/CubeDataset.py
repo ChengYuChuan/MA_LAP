@@ -2,8 +2,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import os
-from scipy.stats import gennorm
-from utils import get_logger
+from LAP_Code.utils import get_logger
 import sys
 
 logger = get_logger('Dataset')
