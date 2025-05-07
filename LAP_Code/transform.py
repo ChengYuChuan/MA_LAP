@@ -24,9 +24,9 @@ class Standardize:
             m = (m - mean) / np.clip(std, a_min=self.eps, a_max=None)
 
         if self.min_max:
-            min_val = standardized.min()
-            max_val = standardized.max()
-            standardized = (standardized - min_val) / (max_val - min_val + self.eps)
+            min_val = m.min()
+            max_val = m.max()
+            m = (m - min_val) / (max_val - min_val + self.eps)
 
         return standardized
 
