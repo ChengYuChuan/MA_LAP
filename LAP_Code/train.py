@@ -209,6 +209,14 @@ optimizer = create_optimizer('Adam', model, learning_rate=Learning_Rate, weight_
 # --- Scheduler ---
 lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=1, factor=0.5, min_lr=0.00001) # 每15個epoch衰減學習率
 # lr_scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=0.000005)
+lr_scheduler = lr_scheduler.ReduceLROnPlateau(
+    optimizer,
+    mode='max',
+    factor=0.5,       # 每次降一半
+    patience=3,       # 容忍 5 次沒有進步
+    min_lr=1e-6,      # 最低不小於這個
+    verbose=True
+)
 
 
 tensorboard_formatter = TensorboardFormatter(log_channelwise=True)
