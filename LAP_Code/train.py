@@ -37,11 +37,8 @@ logger = get_logger('Trainer')
 
 random_state = np.random.RandomState(66)  # 這樣才是正確的隨機狀態
 transform_pipeline = transforms.Compose([
-    Standardize(mean=0, std=1, min_max=True), #TODO 這樣的標準化請問是全部558個細胞一請算標準化還是？
-    # RandomFlip(random_state),        # 預設隨機沿 (2,3,4) 翻轉
-    # RandomRotate90(random_state),      # 隨機以 90 度倍數旋轉
-    # RandomRotate(random_state, axes=[(2, 1)], angle_spectrum=45, mode='reflect'),
-    ToTensor(expand_dims=True)        # 若資料為 (24,24,24) 則轉換成 (1,1,24,24,24)
+    Standardize(z_score=True, min_max=True),
+    ToTensor(expand_dims=True)        # from (32,32,32) reform into (1,1,32,32,32)
 ])
 loaders = get_train_loaders(transform=transform_pipeline,num_workers=2, batch_size= 2) # training setting
 
