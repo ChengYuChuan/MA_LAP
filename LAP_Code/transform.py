@@ -5,7 +5,9 @@ import numpy as np
 
 
 class Standardize:
-    def __init__(self, eps=1e-10, mean=None, std=None, channelwise=False, min_max=True, **kwargs):
+    def __init__(self, z_score=True, min_max=True, mean=None, std=None, eps=1e-10, **kwargs):
+        self.z_score = z_score
+        self.min_max = min_max
         self.mean = mean
         self.std = std
         self.eps = eps
