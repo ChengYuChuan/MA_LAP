@@ -183,7 +183,7 @@ class MultiLayerHungarianLoss(nn.Module):
         self.base_loss_fn = base_loss_fn or DifferentiableHungarianLoss()
         self.penalty_weight = penalty_weight
         self.penalty_mode = penalty_mode  # "none", "per_layer", "global"
-        self.total_loss_weight = total_loss_weight  # 新增: 控制total_loss的重要性
+        self.total_loss_weight = total_loss_weight  # Controls total loss importance
 
     def forward(self, multi_layer_latents, inv_perm_A=None, inv_perm_B=None):
         """
