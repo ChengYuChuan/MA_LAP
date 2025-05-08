@@ -131,6 +131,11 @@ class DifferentiableHungarianLoss(nn.Module):
             return ((A_flat.unsqueeze(1) - B_flat.unsqueeze(0)) ** 2).mean(dim=2)
 
     def forward(self, latent, inv_perm_A=None, inv_perm_B=None):
+        """
+        Forward pass: calculates the Hungarian loss between two sets of embeddings.
+        Optionally restores original order via inverse permutations.
+        Computes the difference between the predicted and ideal matching costs.
+        """
         assert latent.shape[0] == 2, "Latent input must be shape (2, N, ...)"
         num_cells = latent.shape[1]
         latent_dim = latent.shape[2:].numel()
