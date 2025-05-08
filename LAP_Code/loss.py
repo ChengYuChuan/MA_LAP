@@ -198,6 +198,9 @@ class MultiLayerHungarianLoss(nn.Module):
 
     # 新增：允許在train loop中動態調整loss weight
     def set_total_loss_weight(self, new_weight):
+        """
+        Dynamically adjusts the weight of the total loss term (matching).
+        """
         self.total_loss_weight = new_weight
 
     def set_penalty_weight(self, new_weight):
