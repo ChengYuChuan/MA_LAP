@@ -62,6 +62,10 @@ class LAPSolver(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, unaries: torch.Tensor, params: dict):
+        """
+        Forward pass: computes optimal assignment given a cost matrix (unaries)
+        using the Hungarian algorithm and returns a one-hot assignment matrix.
+        """
         device = unaries.device
         labelling = torch.zeros_like(unaries)
         unaries_np = unaries.cpu().detach().numpy()
