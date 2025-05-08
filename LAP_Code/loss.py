@@ -155,6 +155,11 @@ class MultiLayerHungarianLoss(nn.Module):
         self.total_loss_weight = total_loss_weight  # 新增: 控制total_loss的重要性
 
     def forward(self, multi_layer_latents, inv_perm_A=None, inv_perm_B=None):
+        """
+        Calculates the weighted sum of Hungarian losses over multiple layers of
+        latent features. If enabled, adds cosine similarity penalty between
+        predicted matching and identity matrix.
+        """
         total_loss = 0
         similarity_penalty = 0
         match_info = None
