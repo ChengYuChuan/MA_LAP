@@ -112,6 +112,11 @@ class LAPSolver(torch.autograd.Function):
 
 
 class DifferentiableHungarianLoss(nn.Module):
+    """
+    A differentiable Hungarian loss module that compares two sets of latent
+    embeddings by computing an optimal assignment cost using LAPSolver.
+    Supports multiple distance metrics (L1, L2, MSE).
+    """
     def __init__(self, distance_type="L2", lambda_val=20):
         super().__init__()
         self.distance_type = distance_type
