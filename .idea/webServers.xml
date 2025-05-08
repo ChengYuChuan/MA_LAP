@@ -5,7 +5,7 @@
       <webServer id="c8a014bb-0906-405b-997b-f5717f9d8455" name="CLserver">
         <fileTransfer rootFolder="/home/students/cheng" accessType="SFTP" host="cluster.cl.uni-heidelberg.de" port="22" sshConfigId="cd1ae962-c604-482f-8197-42536bedec72" sshConfig="CLCluster">
           <advancedOptions>
-            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
           </advancedOptions>
         </fileTransfer>
       </webServer>

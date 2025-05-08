@@ -40,8 +40,6 @@ class Standardize:
         self.mean = mean
         self.std = std
         self.eps = eps
-        self.channelwise = channelwise  # 默認 False, 確保對整個 cube 做標準化
-        self.min_max = min_max  # 是否應用 Min-Max Normalization
 
     def __call__(self, m):
         if isinstance(m, torch.Tensor):

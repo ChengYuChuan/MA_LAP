@@ -1,10 +1,18 @@
+from sys import prefix
+
 import torch
+import torch.nn as nn
+from torch.nn import functional as F
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from LAP_Code.utils import get_logger, load_checkpoint, save_checkpoint, RunningAverage
+from CubeDataset import get_train_loaders
+
+from utils import get_logger, load_checkpoint, create_optimizer, save_checkpoint, RunningAverage
+from utils import _split_and_move_to_gpu, TensorboardFormatter
 from datetime import datetime
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
 import os
 import numpy as np
 import torch
@@ -13,6 +21,8 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 import torchvision.transforms as T
 from PIL import Image
+
+from torch.cuda.amp import autocast, GradScaler
 
 logger = get_logger('LAPNetTrainer')
 
@@ -127,7 +137,7 @@ class LAPNetTrainer:
                 self.checkpoint_dir = os.path.split(pre_trained)[0]
 
         # Early stopping
-        self.early_stopper = EarlyStopping(patience=5, higher_is_better=eval_score_higher_is_better)
+        self.early_stopper = EarlyStopping(patience=20, higher_is_better=eval_score_higher_is_better)
 
         # Dynamic loss scheduling config
         self.total_loss_initial_weight = 1.0
@@ -153,6 +163,8 @@ class LAPNetTrainer:
         for batch in self.loaders['train']:
             if self.num_iterations > self.max_num_iterations:
                 return True
+            logger.info(f'Training iteration [{self.num_iterations}/{self.max_num_iterations}]. '
+                        f'Epoch [{self.num_epochs}/{self.max_num_epochs - 1}]')
 
             self._adjust_loss_weights()  # 動態調整 total_loss_weight / penalty_weight
 
@@ -189,11 +201,11 @@ class LAPNetTrainer:
             # === 每validate_after_iters次做一次Validation
             if self.num_iterations % self.validate_after_iters == 0:
                 self.model.eval()
-                val_accuracy = self.validate()
+                val_loss, val_accuracy = self.validate()
                 self.model.train()
 
                 if isinstance(self.scheduler, ReduceLROnPlateau):
-                    self.scheduler.step(val_accuracy)
+                    self.scheduler.step(val_loss)  # ✨ 使用 loss 作為調度依據
                 elif self.scheduler is not None:
                     self.scheduler.step()
 
@@ -202,14 +214,13 @@ class LAPNetTrainer:
                 is_best = self._is_best_eval_score(val_accuracy)
                 self._save_checkpoint(is_best)
 
-                # Early stopping
-                if self.early_stopper.step(val_accuracy):
+                if self.early_stopper.step(val_accuracy):  # ✨ 使用 accuracy 作為 early stopping 判斷
                     logger.info('Early stopping condition met.')
                     return True
 
             # === 每log_after_iters次做一次 logging
             if self.num_iterations % self.log_after_iters == 0:
-                # logger.info(f"Training stats. Loss: {train_losses.avg:.4f} | Accuracy: {train_accuracies.avg:.4f}")
+                logger.info(f"Training stats. Loss: {train_losses.avg:.4f} | Accuracy: {train_accuracies.avg:.4f}")
                 self._log_stats('train', train_losses.avg, train_accuracies.avg)
 
                 # Log matching matrix, cosine similarity, random pair prediction
@@ -233,10 +244,11 @@ class LAPNetTrainer:
         self.model.eval()
         with torch.no_grad():
             rs = np.random.RandomState(42)
-            if len(self.loaders['val']) <= self.max_val_images:
-                indices = list(range(len(self.loaders['val'])))
-            else:
-                indices = rs.choice(len(self.loaders['val']), size=self.max_val_images, replace=False)
+            indices = (
+                list(range(len(self.loaders['val'])))
+                if len(self.loaders['val']) <= self.max_val_images
+                else rs.choice(len(self.loaders['val']), size=self.max_val_images, replace=False)
+            )
 
             for i, (cubes, paths, perms, inv_perms) in enumerate(tqdm(self.loaders['val'])):
                 cubes = cubes.to(next(self.model.parameters()).device)
@@ -244,21 +256,20 @@ class LAPNetTrainer:
 
                 with autocast():
                     multi_feats = self.model(cubes, return_layers=[-2, -1])
-                    loss, (row_ind, col_ind) = self.loss_criterion(multi_feats, inv_perm_A=inv_perm_A,
-                                                                   inv_perm_B=inv_perm_B)
+                    loss, (row_ind, col_ind) = self.loss_criterion(
+                        multi_feats, inv_perm_A=inv_perm_A, inv_perm_B=inv_perm_B
+                    )
 
                 val_losses.update(loss.item(), 1)
                 accuracy = np.mean((row_ind == col_ind).astype(np.float32))
                 val_accuracies.update(accuracy, 1)
 
-                # 只在第一個 batch log validation matching
                 if i == 0:
                     predicted_matching = torch.zeros((len(row_ind), len(col_ind)), device=loss.device)
                     predicted_matching[row_ind, col_ind] = 1.0
                     self._log_matching_similarity(predicted_matching, tag_prefix="val/matching_similarity")
                     self._log_matching_heatmap(predicted_matching, title="Validation Matching Heatmap",
                                                tag_prefix="val/matching_heatmap")
-                    perm_A, perm_B = perms[0], perms[1]
                     self._log_random_pair_predictions(cubes, row_ind, col_ind, inv_perm_A, inv_perm_B)
 
                 if self.validate_iters is not None and self.validate_iters <= i:
@@ -267,7 +278,7 @@ class LAPNetTrainer:
         logger.info(f"Validation finished. Loss: {val_losses.avg:.4f}. Accuracy: {val_accuracies.avg:.4f}")
         self._log_stats('val', val_losses.avg, val_accuracies.avg)
 
-        return val_accuracies.avg
+        return val_losses.avg, val_accuracies.avg  # 同時回傳兩者
 
     def _adjust_loss_weights(self):
         progress = 0.0

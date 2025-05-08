@@ -2,7 +2,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import os
-from LAP_Code.utils import get_logger
+from scipy.stats import gennorm
+from utils import get_logger
 import sys
 
 logger = get_logger('Dataset')
@@ -25,7 +26,7 @@ def get_train_loaders(transform=None, num_workers=0, batch_size=1, device='GPU')
     """
 
     logger.info('Creating training and validation set loaders...')
-    folder_path = "/content/drive/MyDrive/Masterarbeit Code/MergedCubes32"
+    folder_path = "/home/hd/hd_hd/hd_uu312/MergedCubes32"
 
     train_dataset = CubeDataset(folder_path,transform=transform, split="train")
     val_dataset = CubeDataset(folder_path,transform=transform, split="val")

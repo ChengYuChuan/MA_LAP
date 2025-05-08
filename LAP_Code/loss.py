@@ -5,7 +5,10 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 from scipy.optimize import linear_sum_assignment
-from LAP_Code.utils import get_logger
+from math import exp
+from utils import get_logger
+import math
+import warnings
 
 logger = get_logger('Loss')
 
@@ -232,7 +235,6 @@ class MultiLayerHungarianLoss(nn.Module):
 
         return final_loss, match_info
 
-    # 新增：允許在train loop中動態調整loss weight
     def set_total_loss_weight(self, new_weight):
         """
         Dynamically adjusts the weight of the total loss term (matching).

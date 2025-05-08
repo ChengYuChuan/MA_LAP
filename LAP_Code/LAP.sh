@@ -27,4 +27,4 @@ cd /home/students/cheng/3DUnet
 conda activate MAenv
 
 srun hostname
-srun python train.py "DifferentiableHungarianLoss" "MergedCubes" 32 'max' 0.0002 5 0.8
+srun python train.py "DifferentiableHungarianLoss" "MergedCubes" 32 'max' 0.001 5 0.8
