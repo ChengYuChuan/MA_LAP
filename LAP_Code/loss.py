@@ -144,6 +144,12 @@ class DifferentiableHungarianLoss(nn.Module):
         return loss, (row_ind, col_ind)
 
 class MultiLayerHungarianLoss(nn.Module):
+    """
+    Multi-layer extension of the differentiable Hungarian loss.
+    Aggregates weighted losses from multiple layers of latent features and
+    optionally applies a cosine similarity penalty between the predicted
+    and identity (ground truth) matching matrices.
+    """
     def __init__(self, layer_weights, base_loss_fn=None,
                  penalty_weight=0.1, penalty_mode="global",
                  total_loss_weight=1.0):
