@@ -81,6 +81,11 @@ class LAPSolver(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, unary_gradients: torch.Tensor):
+        """
+        Backward pass: approximates gradients by solving the LAP on a perturbed
+        cost matrix (original + lambda * gradient) and calculating the difference
+        between original and perturbed matchings.
+        """
         assert ctx.unaries.shape == unary_gradients.shape
 
         lambda_val = ctx.params.get("lambda", 15)
