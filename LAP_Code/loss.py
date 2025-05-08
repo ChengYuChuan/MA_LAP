@@ -201,6 +201,9 @@ class MultiLayerHungarianLoss(nn.Module):
         self.total_loss_weight = new_weight
 
     def set_penalty_weight(self, new_weight):
+        """
+        Dynamically adjusts the weight of the similarity penalty term.
+        """
         self.penalty_weight = new_weight
 
 
