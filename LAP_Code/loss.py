@@ -53,6 +53,12 @@ def compute_per_channel_dice(input, target, epsilon=1e-6, weight=None):
 
 
 class LAPSolver(torch.autograd.Function):
+    """
+    A custom differentiable solver for the Linear Assignment Problem (LAP),
+    implemented using the Hungarian algorithm. The forward pass computes the
+    optimal assignment, while the backward pass approximates gradients by
+    solving a perturbed version of the problem.
+    """
 
     @staticmethod
     def forward(ctx, unaries: torch.Tensor, params: dict):
