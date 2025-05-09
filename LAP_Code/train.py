@@ -175,7 +175,7 @@ tensorboard_formatter = TensorboardFormatter(log_channelwise=True)
 total_data = 196
 train_ratio = 0.9
 batch_size = 2
-num_epochs = 40
+num_epochs = 10
 
 # Dynamic iterations
 train_data = int(total_data * train_ratio)  # 176
