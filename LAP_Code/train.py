@@ -114,7 +114,7 @@ def count_parameters(model):
 # Create an instance of your Autoencoder model
 model = LatentEncoder()
 
-# 載入預訓練 autoencoder 的 state_dict
+# Load state_dict of autoencoder
 full_state = torch.load('/home/hd/hd_hd/hd_uu312/LAP path/CheckPoint_BS2_RBPNI_32_3Layers_CD_Cube32_L1/best_checkpoint.pytorch', map_location='cpu')
 ae_model_state = full_state['model_state_dict']
 

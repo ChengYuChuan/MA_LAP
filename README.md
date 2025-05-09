@@ -64,3 +64,44 @@ if we have a check point file like `RBPNI_32_4Layers_CD`, which means we use
 - `cge` as `layer_order` 
 - `f_map` start from 32 and it has 4 Block Layers like: `[32,64,128,256]`
 - `conv`(CD) as `downsample_mode`
+
+The encoder takes in batches of shape `(B, N, C, D, H, W)` and outputs multiple latent representations across different feature depths.
+
+---
+
+## 🧪 Data Preparation
+
+Worm cell cubes (`MergedCubes32`) should be downloaded from the [Google Drive link](https://drive.google.com/drive/folders/1HSu7vZkxCNFcxWPZKkHtazc0NycYo5mW?usp=sharing).
+
+```python
+loaders = get_train_loaders(transform=transform_pipeline, folder_path="/home/hd/hd_hd/hd_uu312/MergedCubes32", num_workers=2, batch_size=2)
+```
+
+Each cube represents a 3D volume (typically 32³ voxels) of individual worm cells.
+
+---
+
+## 🎯 Pretrained Encoder
+
+You can load a pretrained encoder from a checkpoint (e.g., from [this checkpoint directory](https://drive.google.com/drive/folders/1BwaG9Z8-Gz_TkIbIvmxYomcB4i7q35Mf?usp=sharing)) using:
+
+```python
+model.load_state_dict(encoder_state, strict=False)
+```
+
+Checkpoints are named to indicate architecture and parameters, e.g.:
+
+* `RBPNI_32_4Layers_CD`: Uses `ResNetBlock`, `cge` layer order, 4 layers with `[32,64,128,256]`.
+
+---
+
+## 🧮 Loss Function
+
+The training objective uses a differentiable Hungarian loss based on matching latent features between paired worm samples. It includes:
+
+* Weighted contributions from multiple encoder layers.
+* A cosine similarity penalty to encourage global alignment consistency.
+
+```python
+loss_criterion = get_loss_criterion(name='MultiLayerHungarianLoss', layer_weights=[0.3, 0.7], penalty_weight=0.5, penalty_scale=10.0)
+```

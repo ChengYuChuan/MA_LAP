@@ -24,9 +24,7 @@ def get_train_loaders(transform=None, num_workers=0, batch_size=1,folder_path = 
             'val': <val_loader>
         }
     """
-
     logger.info('Creating training and validation set loaders...')
-    folder_path = "/home/hd/hd_hd/hd_uu312/MergedCubes32"
 
     train_dataset = CubeDataset(folder_path,transform=transform, split="train")
     val_dataset = CubeDataset(folder_path,transform=transform, split="val")
