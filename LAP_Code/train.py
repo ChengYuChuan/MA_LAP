@@ -151,8 +151,9 @@ loss_criterion = get_loss_criterion(name='MultiLayerHungarianLoss',
 # --- Evaluation ---
 # eval_criterion = get_loss_criterion(name="DifferentiableHungarianLoss").to(device)
 eval_criterion = get_loss_criterion(name='MultiLayerHungarianLoss',
-                                    layer_weights=[0.2, 0.8],
-                                    penalty_weight=0.35,
+                                    layer_weights=[0.3, 0.7],
+                                    penalty_weight=0.5,
+                                    penalty_scale=10.0,
                                     penalty_mode="global" ).to(device)
 
 # --- Optimizer ---
