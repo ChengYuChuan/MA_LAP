@@ -146,7 +146,7 @@ class DifferentiableHungarianLoss(nn.Module):
         latent_A = latent[0]
         latent_B = latent[1]
 
-        # ✅ 還原 permutation
+        # Inverse permutation back to original order (which is like Label dict.xlsx)
         if inv_perm_A is not None:
             latent_A = latent_A[inv_perm_A]
         if inv_perm_B is not None:
