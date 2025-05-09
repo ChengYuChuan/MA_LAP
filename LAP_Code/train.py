@@ -36,8 +36,7 @@ transform_pipeline = transforms.Compose([
     Standardize(z_score=True, min_max=True),
     ToTensor(expand_dims=True)        # from (32,32,32) reform into (1,1,32,32,32)
 ])
-loaders = get_train_loaders(transform=transform_pipeline,num_workers=2, batch_size= 2) # training setting
-
+loaders = get_train_loaders(transform=transform_pipeline,folder_path = "/home/hd/hd_hd/hd_uu312/MergedCubes32",num_workers=2, batch_size= 2) # training setting
 
 folder_path = "/home/hd/hd_hd/hd_uu312/MergedCubes32"
 train_dataset = CubeDataset(folder_path, transform=transform_pipeline, split="train")
