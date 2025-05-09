@@ -13,7 +13,7 @@ STR_CubesSize = str(CubeSize)
 CubeSize = int(CubeSize)
 
 logger = get_logger('Dataset')
-def get_train_loaders(transform=None, num_workers=0, batch_size=1, device='GPU'):
+def get_train_loaders(transform=None, num_workers=0, batch_size=1,folder_path = "/home/hd/hd_hd/hd_uu312/MergedCubes32", device='GPU'):
     """
     Returns dictionary containing the training and validation loaders (torch.utils.data.DataLoader).
     Args:
