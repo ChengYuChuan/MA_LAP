@@ -28,7 +28,7 @@ logger = get_logger('LAPNetTrainer')
 
 class EarlyStopping:
     """Simple early stopping based on validation score."""
-    def __init__(self, patience=20, higher_is_better=True):
+    def __init__(self, patience=10, higher_is_better=True):
         self.patience = patience
         self.higher_is_better = higher_is_better
         self.best_score = None
@@ -142,9 +142,14 @@ class LAPNetTrainer:
         # Dynamic loss scheduling config
         self.total_loss_initial_weight = 1.0
         self.total_loss_final_weight = 0.3
+
         self.penalty_initial_weight = 0.2
         self.penalty_final_weight = 0.5
-        self.decay_start_iter = 25
+
+        self.penalty_initial_scale = 5.0
+        self.penalty_final_scale = 20.0
+
+        self.decay_start_iter = 22
         self.decay_end_iter = int(self.max_num_iterations * 0.8)
 
     def fit(self):
@@ -174,8 +179,7 @@ class LAPNetTrainer:
 
             with autocast():
                 multi_feats = self.model(cubes, return_layers=[-2, -1])
-                loss, (row_ind, col_ind) = self.loss_criterion(multi_feats, inv_perm_A=inv_perm_A,
-                                                               inv_perm_B=inv_perm_B)
+                loss, (row_ind, col_ind) = self.loss_criterion(multi_feats, inv_perm_A=inv_perm_A, inv_perm_B=inv_perm_B)
 
             accuracy = np.mean((row_ind == col_ind).astype(np.float32))
 
@@ -268,8 +272,7 @@ class LAPNetTrainer:
                     predicted_matching = torch.zeros((len(row_ind), len(col_ind)), device=loss.device)
                     predicted_matching[row_ind, col_ind] = 1.0
                     self._log_matching_similarity(predicted_matching, tag_prefix="val/matching_similarity")
-                    self._log_matching_heatmap(predicted_matching, title="Validation Matching Heatmap",
-                                               tag_prefix="val/matching_heatmap")
+                    self._log_matching_heatmap(predicted_matching, title="Validation Matching Heatmap", tag_prefix="val/matching_heatmap")
                     self._log_random_pair_predictions(cubes, row_ind, col_ind, inv_perm_A, inv_perm_B)
 
                 if self.validate_iters is not None and self.validate_iters <= i:
@@ -286,11 +289,17 @@ class LAPNetTrainer:
             progress = (self.num_iterations - self.decay_start_iter) / (self.decay_end_iter - self.decay_start_iter)
             progress = min(max(progress, 0.0), 1.0)
 
+        # Dynamic Linear Adjusting total_loss and penalty weight
         total_loss_weight = self.total_loss_initial_weight * (1 - progress) + self.total_loss_final_weight * progress
         penalty_weight = self.penalty_initial_weight * (1 - progress) + self.penalty_final_weight * progress
 
+        # penalty scale Dynamic Linear Adjustment
+        penalty_scale = self.penalty_initial_scale * (1 - progress) + self.penalty_final_scale * progress
+
         self.loss_criterion.set_total_loss_weight(total_loss_weight)
         self.loss_criterion.set_penalty_weight(penalty_weight)
+        self.loss_criterion.set_penalty_scale(penalty_scale)
+
 
     def _save_checkpoint(self, is_best):
         last_file_path = os.path.join(self.checkpoint_dir, 'last_checkpoint.pytorch')

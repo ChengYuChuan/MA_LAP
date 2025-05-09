@@ -7,8 +7,6 @@ import math
 from CubeDataset import CubeDataset, get_train_loaders
 #---Transform---
 import torchvision.transforms as transforms
-import utils
-# from torch_geometric.contrib.nn.models.rbcd_attack import LOSS_TYPE
 # --- internal function ---
 from utils import get_logger, load_checkpoint, create_optimizer, save_checkpoint, RunningAverage
 from utils import _split_and_move_to_gpu, TensorboardFormatter
@@ -45,15 +43,13 @@ folder_path = "/home/hd/hd_hd/hd_uu312/MergedCubes32"
 train_dataset = CubeDataset(folder_path, transform=transform_pipeline, split="train")
 val_dataset = CubeDataset(folder_path, transform=transform_pipeline, split="val")
 
-# 打印各个 split 的数据集大小
 print(f"Train dataset size: {len(train_dataset)}")
 print(f"Validation dataset size: {len(val_dataset)}")
 
-# Define Autoencoder model, if you change the basic module, you should change layer order ALSO!!!!!
 # DoubleConv gcr or ResNetBlock cge
 # [32,64,128,256]
 # [16,32,64,128] class LatentEncoder(nn.Module) 的def forward(self, x, return_layer=-2):
-#  ResBlockPNI gce,    ResNetBlock cge,    DoubleConv gcr
+#  ResBlockPNI gce OR ResNetBlock cge OR DoubleConv gcr
 class LatentEncoder(nn.Module):
   def __init__(self, in_channels=1, f_maps=[32,64,128], layer_order='gce', num_groups=8, pool_type='max'):
       super(LatentEncoder, self).__init__()
@@ -81,7 +77,7 @@ class LatentEncoder(nn.Module):
         x = encoder(x)
         feats.append(x)
 
-    # 預設回傳最後一層
+    # Defaultly return last layer
     if return_layers is None:
         return_layers = [-1]
 
@@ -97,7 +93,7 @@ class LatentEncoder(nn.Module):
 
         feat = feats[encoder_index]
 
-        # 根據 encoder 層數推導壓縮倍率（每層 downsampling ×2）
+        # according to numbers of encoder layers（each layer downsampling ×2）
         downscale_factor = 2 ** encoder_index
         D_out = d // downscale_factor
         H_out = h // downscale_factor
@@ -106,7 +102,7 @@ class LatentEncoder(nn.Module):
         # Debug log (Option)
         # print(f"[DEBUG] Layer {i} → resolved as encoder[{encoder_index}] | Shape: {feat.shape} → reshape to: {(batch_size, num_cubes, feat.shape[1], D_out, H_out, W_out)}")
 
-        # reshape 回 batch 格式
+        # reshape back to batch format
         feat = feat.view(batch_size, num_cubes, feat.shape[1], int(D_out), int(H_out), int(W_out))
         out_feats.append(feat)
 
@@ -124,16 +120,16 @@ model = LatentEncoder()
 full_state = torch.load('/home/hd/hd_hd/hd_uu312/LAP path/CheckPoint_BS2_RBPNI_32_3Layers_CD_Cube32_L1/best_checkpoint.pytorch', map_location='cpu')
 ae_model_state = full_state['model_state_dict']
 
-# 過濾出 encoder 部分
+# Filtering encoder part
 encoder_state = {
     k.replace("encoder.", ""): v
     for k, v in ae_model_state.items()
     if k.startswith("encoder.")
 }
 
-# 載入到你新的 encoder 模型中
+# Load it into the encoder we just created
 model.load_state_dict(encoder_state, strict=False)
-print("成功只載入 encoder 權重！")
+print("Successfully loaded encoder weights！")
 
 # Move the model to the appropriate device ('cuda:0' or 'cpu') before training
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -168,22 +164,22 @@ optimizer = create_optimizer('Adam', model, learning_rate=Learning_Rate, weight_
 lr_scheduler = lr_scheduler.ReduceLROnPlateau(
     optimizer,
     mode='min',
-    factor=0.7,       # 每次降一半
-    patience=3,       # 容忍 5 次沒有進步
-    min_lr=1e-6,      # 最低不小於這個
+    factor=0.7,
+    patience=3,
+    min_lr=1e-6,
     verbose=True
 )
 
 
 tensorboard_formatter = TensorboardFormatter(log_channelwise=True)
 
-# 假設你總共有 196 組資料，其中 90% 用於訓練
+
 total_data = 196
 train_ratio = 0.9
 batch_size = 2
 num_epochs = 40
 
-# 動態計算 iterations
+# Dynamic iterations
 train_data = int(total_data * train_ratio)  # 176
 iters_per_epoch = math.ceil(train_data / batch_size)  # 88
 max_num_iterations = iters_per_epoch * num_epochs

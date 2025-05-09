@@ -180,13 +180,14 @@ class MultiLayerHungarianLoss(nn.Module):
     """
     def __init__(self, layer_weights, base_loss_fn=None,
                  penalty_weight=0.1, penalty_mode="global",
-                 total_loss_weight=1.0):
+                 total_loss_weight=1.0, penalty_scale=1.0):
         super().__init__()
         self.layer_weights = layer_weights
         self.base_loss_fn = base_loss_fn or DifferentiableHungarianLoss()
         self.penalty_weight = penalty_weight
         self.penalty_mode = penalty_mode  # "none", "per_layer", "global"
-        self.total_loss_weight = total_loss_weight  # Controls total loss importance
+        self.total_loss_weight = total_loss_weight
+        self.penalty_scale = penalty_scale
 
     def forward(self, multi_layer_latents, inv_perm_A=None, inv_perm_B=None):
         """
@@ -201,7 +202,7 @@ class MultiLayerHungarianLoss(nn.Module):
         for weight, layer_latent in zip(self.layer_weights, multi_layer_latents):
             loss, info = self.base_loss_fn(layer_latent, inv_perm_A=inv_perm_A, inv_perm_B=inv_perm_B)
             total_loss += weight * loss
-            match_info = info  # 只記最後一層的配對資訊
+            match_info = info
 
             if self.penalty_mode == "per_layer":
                 row_ind, col_ind = info
@@ -227,9 +228,11 @@ class MultiLayerHungarianLoss(nn.Module):
             cosine_sim = F.cosine_similarity(predicted_matching.flatten(), identity.flatten(), dim=0)
             similarity_penalty = (1.0 - cosine_sim)
 
+        # scale penalty value
+        scaled_penalty = similarity_penalty * self.penalty_scale
+
         if self.penalty_mode in ["per_layer", "global"]:
-            # 加入 dynamic weighting
-            final_loss = self.total_loss_weight * total_loss + self.penalty_weight * similarity_penalty
+            final_loss = self.total_loss_weight * total_loss + self.penalty_weight * scaled_penalty
         else:
             final_loss = self.total_loss_weight * total_loss
 
@@ -246,6 +249,10 @@ class MultiLayerHungarianLoss(nn.Module):
         Dynamically adjusts the weight of the similarity penalty term.
         """
         self.penalty_weight = new_weight
+
+    def set_penalty_scale(self, new_scale):
+        self.penalty_scale = new_scale
+
 
 
 
