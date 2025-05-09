@@ -145,8 +145,9 @@ print(f"Total number of trainable parameters: {num_params}")
 # --- Loss ---
 # loss_criterion = get_loss_criterion(name="DifferentiableHungarianLoss").to(device)
 loss_criterion = get_loss_criterion(name='MultiLayerHungarianLoss',
-                                    layer_weights=[0.2, 0.8],
-                                    penalty_weight=0.35,
+                                    layer_weights=[0.3, 0.7],
+                                    penalty_weight=0.5,
+                                    penalty_scale=10.0,
                                     penalty_mode="global" ).to(device)
 # --- Evaluation ---
 # eval_criterion = get_loss_criterion(name="DifferentiableHungarianLoss").to(device)
