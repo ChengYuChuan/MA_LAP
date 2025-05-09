@@ -46,7 +46,6 @@ val_dataset = CubeDataset(folder_path, transform=transform_pipeline, split="val"
 print(f"Train dataset size: {len(train_dataset)}")
 print(f"Validation dataset size: {len(val_dataset)}")
 
-# DoubleConv gcr or ResNetBlock cge
 # [32,64,128,256]
 # [16,32,64,128] class LatentEncoder(nn.Module) 的def forward(self, x, return_layer=-2):
 #  ResBlockPNI gce OR ResNetBlock cge OR DoubleConv gcr
@@ -186,8 +185,8 @@ max_num_iterations = iters_per_epoch * num_epochs
 
 trainer_config = {
     "checkpoint_dir": "/home/hd/hd_hd/hd_uu312/LAP_CheckPoint/LAP CheckPoint 15Lambda035penalty",
-    "validate_after_iters": iters_per_epoch // 4,  # 每 1/2 個 epoch 驗證一次 → 22
-    "log_after_iters": iters_per_epoch // 8,       # 每 1/4 個 epoch logging → 11
+    "validate_after_iters": iters_per_epoch // 4,  # validate per 1/2 epoch → 22
+    "log_after_iters": iters_per_epoch // 8,       # log per 1/4 epoch logging → 11
     "max_num_epochs": num_epochs,
     "max_num_iterations": max_num_iterations
 }

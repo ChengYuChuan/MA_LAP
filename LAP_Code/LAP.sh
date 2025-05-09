@@ -22,8 +22,8 @@
 #alpha = float(sys.argv[7])
 
 #CHECK The Dir before you submit the sh file!!!!!!!!!!!!!!!!!
+cd /home/hd/hd_hd/hd_uu312/MA_LAP/LAP_Code
 source ~/.bashrc
-cd /home/students/cheng/3DUnet
 conda activate MAenv
 
 srun hostname

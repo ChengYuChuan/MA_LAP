@@ -68,14 +68,13 @@ class CubeDataset(Dataset):
         cubes = np.load(self.files[idx]).astype(np.float32)  # shape: (558, 1, 32, 32, 32)
 
         # 新增隨機 permutation
-        perm = np.random.permutation(cubes.shape[0])  # 打亂細胞的順序
-        inv_perm = np.argsort(perm)  # 反向 permutation，可以還原回原本的排序
+        perm = np.random.permutation(cubes.shape[0])  # to get random permutation matrix
+        inv_perm = np.argsort(perm)  # inverse permutation
 
-        # 使用 permutation 打亂 cube 順序
+        # apply permutation matrix cubes order
         if self.transform:
             cubes = torch.stack([self.transform(cube) for cube in cubes[perm]], dim=0)
         else:
             cubes = torch.from_numpy(cubes[perm])
 
-        # 把 permutation 一起回傳
         return cubes, self.files[idx], perm, inv_perm

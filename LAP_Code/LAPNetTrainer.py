@@ -209,7 +209,7 @@ class LAPNetTrainer:
                 self.model.train()
 
                 if isinstance(self.scheduler, ReduceLROnPlateau):
-                    self.scheduler.step(val_loss)  # ✨ 使用 loss 作為調度依據
+                    self.scheduler.step(val_loss)  # take loss as learning reference
                 elif self.scheduler is not None:
                     self.scheduler.step()
 
@@ -218,7 +218,7 @@ class LAPNetTrainer:
                 is_best = self._is_best_eval_score(val_accuracy)
                 self._save_checkpoint(is_best)
 
-                if self.early_stopper.step(val_accuracy):  # ✨ 使用 accuracy 作為 early stopping 判斷
+                if self.early_stopper.step(val_accuracy):  # take accuracy as early stopping threshold
                     logger.info('Early stopping condition met.')
                     return True
 
@@ -281,7 +281,7 @@ class LAPNetTrainer:
         logger.info(f"Validation finished. Loss: {val_losses.avg:.4f}. Accuracy: {val_accuracies.avg:.4f}")
         self._log_stats('val', val_losses.avg, val_accuracies.avg)
 
-        return val_losses.avg, val_accuracies.avg  # 同時回傳兩者
+        return val_losses.avg, val_accuracies.avg
 
     def _adjust_loss_weights(self):
         progress = 0.0
@@ -381,10 +381,10 @@ class LAPNetTrainer:
 
         fig, axes = plt.subplots(5, 2, figsize=(6, 15))
         for ax_row, idx in zip(axes, sample_indices):
-            i = row_ind[idx]  # 原始順序中的 A 細胞 index
-            j = col_ind[idx]  # 原始順序中的 B 細胞 index
+            i = row_ind[idx]  # Original A cells index
+            j = col_ind[idx]  # Original B cells index
 
-            is_correct = (i == j)  # 判斷是否配對正確（identity match）
+            is_correct = (i == j)  # identity match
 
             # === 畫出對應的切片影像 ===
             for k, (cube_tensor, cell_idx) in enumerate([(cubes_A, i), (cubes_B, j)]):

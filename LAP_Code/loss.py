@@ -278,9 +278,6 @@ def get_loss_criterion(name, weight=None, ignore_index=None, skip_last_target=Fa
     if pos_weight is not None:
         pos_weight = torch.tensor(pos_weight)
 
-    # 移除 loss_kwargs 內的 return_msssim，避免重複
-    return_msssim = loss_kwargs.pop("return_msssim", False)
-
     loss = _create_loss(
         name, weight, ignore_index, pos_weight,
         alpha=alpha, window_size=window_size,

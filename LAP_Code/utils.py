@@ -132,7 +132,8 @@ def create_optimizer(optim_name, model, learning_rate=1e-3, weight_decay=0, **kw
     return optimizer
 
 class RunningAverage:
-    """Computes and stores the average
+    """
+    Computes and stores the average
     """
 
     def __init__(self):
