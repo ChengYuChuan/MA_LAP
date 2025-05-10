@@ -11,18 +11,26 @@ This system is built to perform cell-wise alignment between two worm volumes rep
 ---
 
 ## 📁 Folder Structure Summary
-
+### LAP_Code
 * **`train.py`**: Main entry script for training. It sets up data loading, model construction (with encoder architecture), loss functions, optimizer, and training loop using `LAPNetTrainer`.
 * **`CubeDataset.py`**: Defines the `CubeDataset` class for loading `.npy` files (each representing worm cell cubes). Includes data shuffling and split between training and validation.
 * **`buildingblocks.py`**: Core network components, including `ResBlockPNI`, `DoubleConv`, `Encoder`, and helper functions like `create_encoders`.
 * **`LAPNetTrainer.py`**: Encapsulates the training and validation logic. Handles logging, learning rate scheduling, dynamic loss adjustment, early stopping, and visualization through TensorBoard.
 * **`loss.py`**: Implements differentiable Hungarian-based losses including:
-
   * `DifferentiableHungarianLoss` for pairwise assignments
   * `MultiLayerHungarianLoss` for multi-resolution feature alignment
+
 * **`transform.py`**: Data augmentation and normalization routines, including Z-score and Min-Max standardization.
 * **`utils.py`**: Logging, checkpoint handling, optimizer creation, and various training utilities.
 
+### Data Info
+* **`worm_shapes_and_sizes_CropRaw.xlsx`**: It shows the 500 sample's shape and the size of the data.
+* **`worm_shapes_and_sizes_mask.xlsx`**: It shows the 500 sample's shape and the size of the data (only in one Channel).
+
+#### These are the samples I use:
+* **`GoldenSample_shapes_and_sizes_CropRaw.xlsx`**: It shows the 200 sample's shape and the size of the data.
+* **`GoldenSample_shapes_and_sizes_Masked.xlsx`**: It shows the 200 sample's shape and the size of the data (only in one Channel).
+* **`Label dict.xlsx`**: It shows the name of Worm No.
 ---
 
 ## 🧠 Model Architecture (Encoder)
@@ -101,6 +109,9 @@ The training objective uses a differentiable Hungarian loss based on matching la
 
 * Weighted contributions from multiple encoder layers.
 * A cosine similarity penalty to encourage global alignment consistency.
+
+* `DifferentiableHungarianLoss` for pairwise assignments
+* `MultiLayerHungarianLoss` for multi-resolution feature alignment
 
 ```python
 loss_criterion = get_loss_criterion(name='MultiLayerHungarianLoss', layer_weights=[0.3, 0.7], penalty_weight=0.5, penalty_scale=10.0)
