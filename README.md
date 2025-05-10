@@ -147,6 +147,7 @@ Extracts 3D cubes (e.g., 32×32×32) centered on annotated neuron coordinates. C
 * **Input**: `.raw` volumes + `.txt` annotation files
 * **Output**: 2-channel `.npy` cubes
 * **Key features**: Robust padding, coordinate alignment, optional `.raw` or `.npy` output
+* Key Reference: [Folder:Processed for GNN](https://github.com/ChengYuChuan/MA_LAP/edit/main/README.md#-folder-processed-for-gnn)
 
 ---
 
