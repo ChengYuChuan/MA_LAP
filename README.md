@@ -253,11 +253,6 @@ python VisMergedData.py
 ├── skipped_files.txt          # From Step1
 ├── processed_files.txt        # From Step1
 ```
-
----
-
-Great — based on the uploaded file `worm_200.txt`, I’ll update the **README** content to include a clear explanation of the **`Processed for GNN/`** folder and the structure of its files.
-
 ---
 
 # Some Explanation of other Reference files or folders
