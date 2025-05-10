@@ -282,7 +282,10 @@ Each file corresponds to a single worm and contains tab-separated information ab
 ### 🔍 Example Row:
 
 ```
-195	ADAL	1242.000000	84.000000	33.000000	1
+label_number	label_name	    x	            y	          z	        Aligned_No
+...
+195	        ADAL	            1242.000000	    84.000000	  33.000000	1
+...
 ```
 
 * `ADAL` is the neuron label.
