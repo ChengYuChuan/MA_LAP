@@ -138,6 +138,8 @@ This pipeline supports **graph neural networks (GNNs)**, voxel classification, a
 
 ## 📁 Pipeline Overview
 
+---
+
 ### **Step 0: `Step0.py`**
 
 Extracts 3D cubes (e.g., 32×32×32) centered on annotated neuron coordinates. Combines raw and masked voxel channels.
@@ -252,3 +254,51 @@ python VisMergedData.py
 ```
 
 ---
+
+Great — based on the uploaded file `worm_200.txt`, I’ll update the **README** content to include a clear explanation of the **`Processed for GNN/`** folder and the structure of its files.
+
+---
+
+# Some Explanation of other Reference files or folders
+
+## 🧬 `Coordinates of cube.zip`
+
+### 🔹 Folder: `Processed for GNN/`
+
+This directory contains `.txt` files with **annotated neuron coordinates** for each worm, used as inputs in `Step0.py`.
+
+### 📄 File Format: `worm_###.txt`
+
+Each file corresponds to a single worm and contains tab-separated information about its identified neurons. The key columns include:
+
+| Column         | Description                                                |
+| -------------- | ---------------------------------------------------------- |
+| `label_number` | Unique numeric ID for the neuron                           |
+| `label_name`   | Neuron name (e.g., `ADAL`, `PHAR`, `RIGL`, etc.)           |
+| `x`, `y`, `z`  | 3D coordinates of the neuron center (float precision)      |
+| `Aligned_No`   | A unique sequential index used as the identifier in output |
+
+### 🔍 Example Row:
+
+```
+195	ADAL	1242.000000	84.000000	33.000000	1
+```
+
+* `ADAL` is the neuron label.
+* The position is at `(x=1242, y=84, z=33)`.
+* This is the first aligned neuron in the list.
+
+### 🧪 Usage in Step0
+
+In `Step0.py`, these files are loaded via:
+
+```python
+txt_path = os.path.join(txt_dir, txt_file)
+coordinates = read_all_coordinates(txt_path)
+```
+
+Each row provides a target for extracting a **32×32×32 cube** around the neuron center. The extracted cube is named as:
+
+```
+<worm_name>_cube_<Aligned_No>.npy
+```
