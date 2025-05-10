@@ -116,3 +116,139 @@ The training objective uses a differentiable Hungarian loss based on matching la
 ```python
 loss_criterion = get_loss_criterion(name='MultiLayerHungarianLoss', layer_weights=[0.3, 0.7], penalty_weight=0.5, penalty_scale=10.0)
 ```
+---
+# Data Preprocessing
+
+This folder provides a full pipeline for preparing, refining, and visualizing **3D voxel cubes of cellular data** extracted from segmented microscopy volumes of *C. elegans* (worms). It supports raw data parsing, mask processing, voxel cube generation, merging, and visualization.
+
+---
+
+## 🔍 Purpose
+
+**WormCube** is designed to:
+
+* Convert raw microscopy data into uniform 3D voxel cubes.
+* Apply biologically relevant masks and refine them using soft boundary masking.
+* Organize per-worm data into consistent arrays for deep learning models.
+* Enable efficient visual inspection of processed cubes.
+
+This pipeline supports **graph neural networks (GNNs)**, voxel classification, and other 3D learning tasks.
+
+---
+
+## 📁 Pipeline Overview
+
+### **Step 0: `Step0.py`**
+
+Extracts 3D cubes (e.g., 32×32×32) centered on annotated neuron coordinates. Combines raw and masked voxel channels.
+
+* **Input**: `.raw` volumes + `.txt` annotation files
+* **Output**: 2-channel `.npy` cubes
+* **Key features**: Robust padding, coordinate alignment, optional `.raw` or `.npy` output
+
+---
+
+### **Step 1: `Step1.py`**
+
+Adds a **soft boundary mask** (third channel) using a sigmoid-transformed distance from labeled regions.
+
+* **Input**: 2-channel cubes
+* **Output**: 3-channel cubes (`[raw, binary_mask, soft_mask]`)
+* **Method**: Applies a decaying weight outside label boundaries
+
+---
+
+### **Step 2: `Step2.py`**
+
+Extracts only the soft-masked voxel (`3rd channel`) for direct use in model training.
+
+* **Input**: 3-channel cubes
+* **Output**: 1-channel soft-masked `.npy` cubes
+* **Purpose**: Simplifies dataset for downstream models
+
+---
+
+### **Merge: `Merge.py`**
+
+Merges all individual cubes per worm into a single 5D array for efficient batched access.
+
+* **Shape**: `(558, 1, 32, 32, 32)` per worm
+* **Output**: One `.npy` file per worm
+* **Note**: Automatically fills missing cells with zeroed cubes
+
+---
+
+### **Validation: `TestSize.py`**
+
+Scans the merged dataset and identifies any `.npy` files with incorrect shapes or loading issues.
+
+* **Output**: List of problematic files, if any
+
+---
+
+### **Visualization: `VisMergedData.py`**
+
+Visualizes 3 random cells from a random worm, displaying:
+
+* XY, XZ, YZ mid-slices
+
+* Interactive colormap support (`viridis`, `inferno`, etc.)
+
+* **Output**: Interactive matplotlib plot
+
+---
+
+## 📸 Sample Output
+
+| View     | Example                                                  |
+| -------- | -------------------------------------------------------- |
+| XY slice | ![xy](https://via.placeholder.com/200x200?text=XY+slice) |
+| XZ slice | ![xz](https://via.placeholder.com/200x200?text=XZ+slice) |
+| YZ slice | ![yz](https://via.placeholder.com/200x200?text=YZ+slice) |
+
+---
+
+## 🛠️ Requirements
+
+```bash
+pip install numpy scipy matplotlib tqdm v3dpy torch plotly pandas
+```
+
+---
+
+## ✅ Recommended Workflow
+
+```bash
+# 1. Extract 2-channel cubes from raw + mask volumes
+python Step0.py
+
+# 2. Add soft boundary as 3rd channel
+python Step1.py
+
+# 3. Extract soft-masked cube for training
+python Step2.py
+
+# 4. Merge all cubes per worm
+python Merge.py
+
+# 5. Check for invalid files
+python TestSize.py
+
+# 6. Visualize samples
+python VisMergedData.py
+```
+
+---
+
+## 📦 Output Directory Structure
+
+```
+├── 2ChannelMaskedCube32/      # After Step0
+├── 3ChannelMaskedCube32/      # After Step1
+├── MaskedCube32/              # After Step2
+├── MergedCubes32/             # After Merge
+├── skipped_files.txt          # From Step1
+├── processed_files.txt        # From Step1
+```
+
+---
