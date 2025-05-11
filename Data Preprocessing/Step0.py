@@ -122,25 +122,32 @@ for raw_file in os.listdir(raw_dir):
         print(f"Warning: No masked file found for {raw_file}")
         continue
 
+# === Maked section start ===
+    """
+    if you don't want masked channel, you could skip this part
+    """
+
     # Load masked raw data
     masked_data = V3DREADER().load(masked_file_path)
     masked_np = masked_data.numpy() if torch.is_tensor(masked_data) else masked_data
     print(f"Masked_np shape {masked_np.shape}")
 
 
-    # 確保拼接時的 shape 一致
+    # Make sure that concatenation shape is aligned
     print(f"data_np shape: {data_np.shape}, masked_np shape: {masked_np.shape}")
     assert data_np.shape[1:] == masked_np.shape[1:], "Shape mismatch between data_np and masked_np"
 
     # Concatenate third channel data with masked data
-    combined_data = np.concatenate((data_np, masked_np), axis=0)  # Concatenate along channel axis
+    data_np = np.concatenate((data_np, masked_np), axis=0)  # Concatenate along channel axis
+
+# === Maked section end ===
 
     # Process each coordinate set
     for x, y, z, aligned_no in coordinates:
         center_point = (z, y, x)  # Note the order: (z,y,x)
 
         # Extract cube
-        cube_data = extract_cube(combined_data, center_point, cube_size)
+        cube_data = extract_cube(data_np, center_point, cube_size)
 
         # Save cube
         save_path = os.path.join(output_dir, f'{Path(raw_file).stem}_cube_{aligned_no:03d}')
