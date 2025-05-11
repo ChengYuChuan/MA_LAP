@@ -79,7 +79,11 @@ The encoder takes in batches of shape `(B, N, C, D, H, W)` and outputs multiple 
 
 ## 🧪 Data Preparation
 
-Worm cell cubes (`MergedCubes32`) should be downloaded from the [Google Drive link](https://drive.google.com/drive/folders/1STs_3_P_IWOG3gvhWCVScEtDQ8RviXY4?usp=sharing).
+Worm cells (`MergedCubes32`) should be downloaded from the [Google Drive link](https://drive.google.com/drive/folders/1STs_3_P_IWOG3gvhWCVScEtDQ8RviXY4?usp=sharing).
+
+Technically, it's not just cubes because it is clustered as a whole worm.
+
+Its shape is `(558,1,32,32,32)` which means it has 558 cell cubes per data.
 
 ```python
 loaders = get_train_loaders(transform=transform_pipeline, folder_path="/home/hd/hd_hd/hd_uu312/MergedCubes32", num_workers=2, batch_size=2)
@@ -153,7 +157,7 @@ Extracts 3D cubes (e.g., 32×32×32) centered on annotated neuron coordinates. C
   * [Masked](https://drive.google.com/file/d/1tO4FY32HbxaplBzLRTMPqHRc7pMYPE_r/view?usp=drive_link)
   * [Coordinates of Cube](https://github.com/ChengYuChuan/MA_LAP/blob/main/Coordinates%20of%20Cube.zip)
 
-NOTE: you can only crop raw Cube from the original worm data.
+NOTE: you can only crop raw Cube from the original worm data. Therefore, you don't have to merge them at the end of the process.
 
 ---
 
