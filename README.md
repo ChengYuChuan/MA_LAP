@@ -157,7 +157,9 @@ Extracts 3D cubes (e.g., 32×32×32) centered on annotated neuron coordinates. C
   * [Masked](https://drive.google.com/file/d/1tO4FY32HbxaplBzLRTMPqHRc7pMYPE_r/view?usp=drive_link)
   * [Coordinates of Cube](https://github.com/ChengYuChuan/MA_LAP/blob/main/Coordinates%20of%20Cube.zip)
 
-NOTE: you can only crop raw Cube from the original worm data.
+NOTE: you can only crop raw Cube from the original worm data. (Skip the concatenation of Mask section)
+
+NOTE: If you only need original data (without mask), you can just skip Step1.py and Step2.py (directly run Merge.py right after Step0.py)
 
 ---
 
