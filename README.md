@@ -24,8 +24,8 @@ This system is built to perform cell-wise alignment between two worm volumes rep
 * **`utils.py`**: Logging, checkpoint handling, optimizer creation, and various training utilities.
 
 ### Data Info
-* **`worm_shapes_and_sizes_CropRaw.xlsx`**: It shows the 500 sample's shape and the size of the data.
-* **`worm_shapes_and_sizes_mask.xlsx`**: It shows the 500 sample's shape and the size of the data (only in one Channel).
+* **`worm_shapes_and_sizes_CropRaw.xlsx`**: It shows the 1055 sample's shape and the size of the data.
+* **`worm_shapes_and_sizes_mask.xlsx`**: It shows the 1055 sample's shape and the size of the data (only in one Channel).
 
 #### These are the samples I use:
 * **`GoldenSample_shapes_and_sizes_CropRaw.xlsx`**: It shows the 200 sample's shape and the size of the data.
