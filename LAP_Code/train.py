@@ -11,7 +11,7 @@ import torchvision.transforms as transforms
 from utils import get_logger, load_checkpoint, create_optimizer, save_checkpoint, RunningAverage
 from utils import _split_and_move_to_gpu, TensorboardFormatter
 from transform import Standardize, RandomFlip, RandomRotate90, RandomRotate, ToTensor
-from buildingblocks import SingleConv, DoubleConv, ResBlockPNI, ResNetBlock, Encoder, Decoder
+from buildingblocks import SingleConv, DoubleConv, ResBlockPNI, Encoder, Decoder
 from buildingblocks import create_encoders, create_decoders
 from loss import get_loss_criterion
 # --- Scheduler ---
