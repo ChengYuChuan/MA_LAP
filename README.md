@@ -1,6 +1,11 @@
 # MA_LAP
 
 ---
+## Installation
+
+
+
+---
 
 ## 🔬 Overview of `LAP_Code`
 
@@ -108,6 +113,8 @@ Checkpoints are named to indicate architecture and parameters, e.g.:
 ---
 
 ## 🧮 Loss Function
+
+### Blackbox Differentiation
 
 The training objective uses a differentiable Hungarian loss based on matching latent features between paired worm samples. It includes:
 
