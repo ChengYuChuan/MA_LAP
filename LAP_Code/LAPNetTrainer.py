@@ -186,7 +186,8 @@ class LAPNetTrainer:
             if self.num_iterations % 10 == 0:
                 worm_A = os.path.basename(paths[0])
                 worm_B = os.path.basename(paths[1])
-                logger.info(f"Pairing: {worm_A} vs {worm_B} | Loss: {loss.item():.4f} | Accuracy: {accuracy:.4f}")
+                logger.info(
+                    f"Pairing: {worm_A} vs {worm_B} | Loss: {loss.item():.4f} | Pairing Accuracy: {correct_matches}/{num_cells} ({accuracy:.4f})")
 
             self.writer.add_scalar("train/loss", loss.item(), self.num_iterations)
             self.writer.add_scalar("train/accuracy_identity_match", accuracy, self.num_iterations)
