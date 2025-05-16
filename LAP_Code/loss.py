@@ -113,6 +113,36 @@ class LAPSolver(torch.autograd.Function):
 
         return unary_grad_bwd.to(ctx.device), None
 
+def compute_distance_matrix(A_flat, B_flat, distance_type="MSE"):
+    if distance_type == "L1":
+        # Uses torch.cdist, which is generally more memory-efficient for L1
+        return torch.cdist(A_flat, B_flat, p=1)
+    elif distance_type == "L2":
+        # Uses torch.cdist, which is generally more memory-efficient for L2
+         return torch.cdist(A_flat, B_flat, p=2)
+    elif distance_type == "MSE":
+        # Optimized MSE calculation to avoid large intermediate tensor
+        # ||a - b||^2 = ||a||^2 - 2a·b + ||b||^2
+        # MSE = ||a - b||^2 / latent_dim
+        A_sq = torch.sum(A_flat**2, dim=1, keepdim=True) # Shape: (num_cells, 1)
+        B_sq = torch.sum(B_flat**2, dim=1, keepdim=True) # Shape: (num_cells, 1)
+        AB = torch.matmul(A_flat, B_flat.transpose(0, 1)) # Shape: (num_cells, num_cells)
+
+        # Expand A_sq and B_sq for broadcasting
+        A_sq = A_sq.expand_as(AB) # Shape: (num_cells, num_cells)
+        B_sq = B_sq.transpose(0, 1).expand_as(AB) # Shape: (num_cells, num_cells)
+
+        distance_sq = A_sq - 2 * AB + B_sq # Shape: (num_cells, num_cells)
+        # Ensure non-negativity due to floating point inaccuracies
+        distance_sq = torch.clamp(distance_sq, min=0)
+
+        latent_dim = A_flat.shape[1]
+        mse_matrix = distance_sq / latent_dim # Shape: (num_cells, num_cells)
+        return mse_matrix
+
+    else:
+        raise ValueError(f"Unsupported distance type: {distance_type}")
+
 
 class DifferentiableHungarianLoss(nn.Module):
     """
