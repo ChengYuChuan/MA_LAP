@@ -52,37 +52,36 @@ class EarlyStopping:
 class LAPNetTrainer:
     """trainer.
 
-    Args:
-        model (Unet3D): UNet 3D model to be trained
-        optimizer (nn.optim.Optimizer): optimizer used for training
-        lr_scheduler (torch.optim.lr_scheduler._LRScheduler): learning rate scheduler
-            WARN: bear in mind that lr_scheduler.step() is invoked after every validation step
-            (i.e. validate_after_iters) not after every epoch. So e.g. if one uses StepLR with step_size=30
-            the learning rate will be adjusted after every 30 * validate_after_iters iterations.
-        loss_criterion (callable): loss function
-        eval_criterion (callable): used to compute training/validation metric (such as Dice, IoU, AP or Rand score)
-            saving the best checkpoint is based on the result of this function on the validation set
-        loaders (dict): 'train' and 'val' loaders
-        checkpoint_dir (string): dir for saving checkpoints and tensorboard logs
-        max_num_epochs (int): maximum number of epochs
-        max_num_iterations (int): maximum number of iterations
-        validate_after_iters (int): validate after that many iterations
-        log_after_iters (int): number of iterations before logging to tensorboard
-        validate_iters (int): number of validation iterations, if None validate
-            on the whole validation set
-        eval_score_higher_is_better (bool): if True higher eval scores are considered better
-        best_eval_score (float): best validation score so far (higher better)
-        num_iterations (int): useful when loading the model from the checkpoint
-        num_epoch (int): useful when loading the model from the checkpoint
-        tensorboard_formatter (callable): converts a given batch of input/output/target image to a series of images
-            that can be displayed in tensorboard
-        skip_train_validation (bool): if True eval_criterion is not evaluated on the training set (used when
-            evaluation is expensive)
-        resume (string): path to the checkpoint to be resumed
-        pre_trained (string): path to the pre-trained model
-        max_val_images (int): maximum number of images to log during validation
-    """
-
+        Args:
+            model (Unet3D): UNet 3D model to be trained
+            optimizer (nn.optim.Optimizer): optimizer used for training
+            lr_scheduler (torch.optim.lr_scheduler._LRScheduler): learning rate scheduler
+                WARN: bear in mind that lr_scheduler.step() is invoked after every validation step
+                (i.e. validate_after_iters) not after every epoch. So e.g. if one uses StepLR with step_size=30
+                the learning rate will be adjusted after every 30 * validate_after_iters iterations.
+            loss_criterion (callable): loss function
+            eval_criterion (callable): used to compute training/validation metric (such as Dice, IoU, AP or Rand score)
+                saving the best checkpoint is based on the result of this function on the validation set
+            loaders (dict): 'train' and 'val' loaders
+            checkpoint_dir (string): dir for saving checkpoints and tensorboard logs
+            max_num_epochs (int): maximum number of epochs
+            max_num_iterations (int): maximum number of iterations
+            validate_after_iters (int): validate after that many iterations
+            log_after_iters (int): number of iterations before logging to tensorboard
+            validate_iters (int): number of validation iterations, if None validate
+                on the whole validation set
+            eval_score_higher_is_better (bool): if True higher eval scores are considered better
+            best_eval_score (float): best validation score so far (higher better)
+            num_iterations (int): useful when loading the model from the checkpoint
+            num_epoch (int): useful when loading the model from the checkpoint
+            tensorboard_formatter (callable): converts a given batch of input/output/target image to a series of images
+                that can be displayed in tensorboard
+            skip_train_validation (bool): if True eval_criterion is not evaluated on the training set (used when
+                evaluation is expensive)
+            resume (string): path to the checkpoint to be resumed
+            pre_trained (string): path to the pre-trained model
+            max_val_images (int): maximum number of images to log during validation
+        """
     def __init__(self, model, optimizer, lr_scheduler, loss_criterion, eval_criterion, loaders, checkpoint_dir,
                  max_num_epochs, max_num_iterations, validate_after_iters=200, log_after_iters=100, validate_iters=None,
                  num_iterations=1, num_epoch=0, eval_score_higher_is_better=True, tensorboard_formatter=None,
@@ -139,19 +138,6 @@ class LAPNetTrainer:
         # Early stopping
         self.early_stopper = EarlyStopping(patience=20, higher_is_better=eval_score_higher_is_better)
 
-        # Dynamic loss scheduling config
-        self.total_loss_initial_weight = 1.0
-        self.total_loss_final_weight = 0.3
-
-        self.penalty_initial_weight = 0.2
-        self.penalty_final_weight = 0.5
-
-        self.penalty_initial_scale = 5.0
-        self.penalty_final_scale = 20.0
-
-        self.decay_start_iter = 22
-        self.decay_end_iter = int(self.max_num_iterations * 0.8)
-
     def fit(self):
         for _ in range(self.num_epochs, self.max_num_epochs):
             should_terminate = self.train()
@@ -171,17 +157,23 @@ class LAPNetTrainer:
             logger.info(f'Training iteration [{self.num_iterations}/{self.max_num_iterations}]. '
                         f'Epoch [{self.num_epochs}/{self.max_num_epochs - 1}]')
 
-            self._adjust_loss_weights()  # 動態調整 total_loss_weight / penalty_weight
-
             (cubes, paths, perms, inv_perms) = batch
             cubes = cubes.to(next(self.model.parameters()).device)
             inv_perm_A, inv_perm_B = inv_perms[0], inv_perms[1]
 
             with autocast():
                 multi_feats = self.model(cubes, return_layers=[-2, -1])
-                loss, (row_ind, col_ind) = self.loss_criterion(multi_feats, inv_perm_A=inv_perm_A, inv_perm_B=inv_perm_B)
+                loss, (row_ind, col_ind) = self.loss_criterion(multi_feats, inv_perm_A=inv_perm_A,
+                                                               inv_perm_B=inv_perm_B)
 
-            accuracy = np.mean((row_ind == col_ind).astype(np.float32))
+            # Compute Accuracy
+            num_cells = len(row_ind)
+            predicted_matching = np.zeros((num_cells, num_cells), dtype=np.float32)
+            predicted_matching[row_ind, col_ind] = 1.0
+            ideal_matching = np.zeros((num_cells, num_cells), dtype=np.float32)
+            ideal_matching[inv_perm_A, inv_perm_B] = 1.0
+            correct_matches = int((predicted_matching * ideal_matching).sum())
+            accuracy = correct_matches / num_cells
 
             if self.num_iterations % 10 == 0:
                 worm_A = os.path.basename(paths[0])
@@ -210,7 +202,7 @@ class LAPNetTrainer:
                 self.model.train()
 
                 if isinstance(self.scheduler, ReduceLROnPlateau):
-                    self.scheduler.step(val_loss)  # take loss as learning reference
+                    self.scheduler.step(val_loss)  # take loss as criterion
                 elif self.scheduler is not None:
                     self.scheduler.step()
 
@@ -219,8 +211,8 @@ class LAPNetTrainer:
                 is_best = self._is_best_eval_score(val_accuracy)
                 self._save_checkpoint(is_best)
 
-                if self.early_stopper.step(val_accuracy):  # take accuracy as early stopping threshold
-                    logger.info('Early stopping condition met.')
+                if self.early_stopper.step(val_accuracy):  # ✨ 使用 accuracy 作為 early stopping 判斷
+                    logger.info(f"Early stopping at epoch {self.num_epochs} with val_loss {val_loss:.4f}")
                     return True
 
             # === 每log_after_iters次做一次 logging
@@ -261,46 +253,41 @@ class LAPNetTrainer:
 
                 with autocast():
                     multi_feats = self.model(cubes, return_layers=[-2, -1])
-                    loss, (row_ind, col_ind) = self.loss_criterion(
+                    loss, (row_ind, col_ind) = self.eval_criterion(
                         multi_feats, inv_perm_A=inv_perm_A, inv_perm_B=inv_perm_B
                     )
 
                 val_losses.update(loss.item(), 1)
-                accuracy = np.mean((row_ind == col_ind).astype(np.float32))
+                # Compute Accuracy
+                num_cells = len(row_ind)
+                predicted_matching = np.zeros((num_cells, num_cells), dtype=np.float32)
+                predicted_matching[row_ind, col_ind] = 1.0
+                ideal_matching = np.zeros((num_cells, num_cells), dtype=np.float32)
+                ideal_matching[inv_perm_A, inv_perm_B] = 1.0
+                correct_matches = int((predicted_matching * ideal_matching).sum())
+                accuracy = correct_matches / num_cells
+
                 val_accuracies.update(accuracy, 1)
 
-                if i == 0:
-                    predicted_matching = torch.zeros((len(row_ind), len(col_ind)), device=loss.device)
-                    predicted_matching[row_ind, col_ind] = 1.0
-                    self._log_matching_similarity(predicted_matching, tag_prefix="val/matching_similarity")
-                    self._log_matching_heatmap(predicted_matching, title="Validation Matching Heatmap", tag_prefix="val/matching_heatmap")
-                    self._log_random_pair_predictions(cubes, row_ind, col_ind, inv_perm_A, inv_perm_B)
+                # if i == 0:
+                #     predicted_matching = torch.zeros((num_cells, num_cells), device=loss.device)
+                #     predicted_matching[row_ind, col_ind] = 1.0
+                #     self._log_matching_similarity(predicted_matching, tag_prefix="val/matching_similarity")
+                #     self._log_matching_heatmap(predicted_matching, title="Validation Matching Heatmap", tag_prefix="val/matching_heatmap")
+                # TODO log of the images should be revised
+                #     self._log_random_pair_predictions(cubes, row_ind, col_ind, inv_perm_A, inv_perm_B)
 
                 if self.validate_iters is not None and self.validate_iters <= i:
                     break
 
-        logger.info(f"Validation finished. Loss: {val_losses.avg:.4f}. Accuracy: {val_accuracies.avg:.4f}")
+        worm_A = os.path.basename(paths[0])
+        worm_B = os.path.basename(paths[1])
+        logger.info(
+            f"Pairing: {worm_A} vs {worm_B} | Loss: {loss.item():.4f} | Pairing Accuracy: {correct_matches}/{num_cells} ({accuracy:.4f})")
+
         self._log_stats('val', val_losses.avg, val_accuracies.avg)
 
-        return val_losses.avg, val_accuracies.avg
-
-    def _adjust_loss_weights(self):
-        progress = 0.0
-        if self.num_iterations > self.decay_start_iter:
-            progress = (self.num_iterations - self.decay_start_iter) / (self.decay_end_iter - self.decay_start_iter)
-            progress = min(max(progress, 0.0), 1.0)
-
-        # Dynamic Linear Adjusting total_loss and penalty weight
-        total_loss_weight = self.total_loss_initial_weight * (1 - progress) + self.total_loss_final_weight * progress
-        penalty_weight = self.penalty_initial_weight * (1 - progress) + self.penalty_final_weight * progress
-
-        # penalty scale Dynamic Linear Adjustment
-        penalty_scale = self.penalty_initial_scale * (1 - progress) + self.penalty_final_scale * progress
-
-        self.loss_criterion.set_total_loss_weight(total_loss_weight)
-        self.loss_criterion.set_penalty_weight(penalty_weight)
-        self.loss_criterion.set_penalty_scale(penalty_scale)
-
+        return val_losses.avg, val_accuracies.avg  # ✨ 同時回傳兩者
 
     def _save_checkpoint(self, is_best):
         last_file_path = os.path.join(self.checkpoint_dir, 'last_checkpoint.pytorch')
@@ -364,6 +351,7 @@ class LAPNetTrainer:
         self.writer.add_image(tag_prefix, image_tensor, self.num_iterations)
         plt.close(fig)
 
+    #TODO need to revise the permutation part in the i,j
     def _log_random_pair_predictions(
             self, cubes, row_ind, col_ind,
             inv_perm_A, inv_perm_B,
@@ -382,10 +370,10 @@ class LAPNetTrainer:
 
         fig, axes = plt.subplots(5, 2, figsize=(6, 15))
         for ax_row, idx in zip(axes, sample_indices):
-            i = row_ind[idx]  # Original A cells index
-            j = col_ind[idx]  # Original B cells index
+            i = row_ind[idx]  # 原始順序中的 A 細胞 index
+            j = col_ind[idx]  # 原始順序中的 B 細胞 index
 
-            is_correct = (i == j)  # identity match
+            is_correct = (i == j)  # 判斷是否配對正確（identity match）
 
             # === 畫出對應的切片影像 ===
             for k, (cube_tensor, cell_idx) in enumerate([(cubes_A, i), (cubes_B, j)]):

@@ -32,19 +32,9 @@ class HammingLoss(torch.nn.Module):
         return errors.mean(dim=0).sum()
 
 class LAPSolver(torch.autograd.Function):
-    """
-    A custom differentiable solver for the Linear Assignment Problem (LAP),
-    implemented using the Hungarian algorithm. The forward pass computes the
-    optimal assignment, while the backward pass approximates gradients by
-    solving a perturbed version of the problem.
-    """
 
     @staticmethod
     def forward(ctx, unaries: torch.Tensor, params: dict):
-        """
-        Forward pass: computes optimal assignment given a cost matrix (unaries)
-        using the Hungarian algorithm and returns a one-hot assignment matrix.
-        """
         device = unaries.device
         labelling = torch.zeros_like(unaries)
         unaries_np = unaries.cpu().detach().numpy()
@@ -60,11 +50,6 @@ class LAPSolver(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, unary_gradients: torch.Tensor):
-        """
-        Backward pass: approximates gradients by solving the LAP on a perturbed
-        cost matrix (original + lambda * gradient) and calculating the difference
-        between original and perturbed matchings.
-        """
         assert ctx.unaries.shape == unary_gradients.shape
 
         lambda_val = ctx.params.get("lambda", 15)
@@ -121,30 +106,12 @@ def compute_distance_matrix(A_flat, B_flat, distance_type="MSE"):
 
 
 class DifferentiableHungarianLoss(nn.Module):
-    """
-    A differentiable Hungarian loss module that compares two sets of latent
-    embeddings by computing an optimal assignment cost using LAPSolver.
-    Supports multiple distance metrics (L1, L2, MSE).
-    """
-    def __init__(self, distance_type="L2", lambda_val=20):
+    def __init__(self, distance_type="MSE", lambda_val=20):
         super().__init__()
         self.distance_type = distance_type
         self.lambda_val = lambda_val
 
-    def compute_distance_matrix(self, A_flat, B_flat):
-        if self.distance_type == "L1":
-            return torch.cdist(A_flat, B_flat, p=1)
-        elif self.distance_type == "L2":
-            return torch.cdist(A_flat, B_flat, p=2)
-        elif self.distance_type == "MSE":
-            return ((A_flat.unsqueeze(1) - B_flat.unsqueeze(0)) ** 2).mean(dim=2)
-
     def forward(self, latent, inv_perm_A=None, inv_perm_B=None):
-        """
-        Forward pass: calculates the Hungarian loss between two sets of embeddings.
-        Optionally restores original order via inverse permutations.
-        Computes the difference between the predicted and ideal matching costs.
-        """
         assert latent.shape[0] == 2, "Latent input must be shape (2, N, ...)"
         num_cells = latent.shape[1]
         latent_dim = latent.shape[2:].numel()
@@ -152,25 +119,18 @@ class DifferentiableHungarianLoss(nn.Module):
         latent_A = latent[0]
         latent_B = latent[1]
 
-        # Inverse permutation back to original order (which is like Label dict.xlsx)
-        if inv_perm_A is not None:
-            latent_A = latent_A[inv_perm_A]
-        if inv_perm_B is not None:
-            latent_B = latent_B[inv_perm_B]
-
         latent_A = latent_A.view(num_cells, latent_dim)
         latent_B = latent_B.view(num_cells, latent_dim)
 
-        cost_matrix = self.compute_distance_matrix(latent_A, latent_B)
+        cost_matrix = compute_distance_matrix(latent_A, latent_B, self.distance_type)
 
         params = {"lambda": self.lambda_val}
         predicted_matching = LAPSolver.apply(cost_matrix, params)
 
-        identity = torch.eye(num_cells, device=latent.device)
+        ideal_matching = torch.zeros_like(predicted_matching)
+        ideal_matching[inv_perm_A, inv_perm_B] = 1.0
 
-        ideal_cost = torch.sum(identity * cost_matrix)
-        predicted_cost = torch.sum(predicted_matching * cost_matrix)
-        loss = abs(predicted_cost - ideal_cost) / num_cells
+        loss = HammingLoss()(predicted_matching, ideal_matching)
 
         col_ind = predicted_matching.argmax(dim=1).detach().cpu().numpy()
         row_ind = np.arange(num_cells)
@@ -178,89 +138,49 @@ class DifferentiableHungarianLoss(nn.Module):
         return loss, (row_ind, col_ind)
 
 class MultiLayerHungarianLoss(nn.Module):
-    """
-    Multi-layer extension of the differentiable Hungarian loss.
-    Aggregates weighted losses from multiple layers of latent features and
-    optionally applies a cosine similarity penalty between the predicted
-    and identity (ground truth) matching matrices.
-    """
-    def __init__(self, layer_weights, base_loss_fn=None,
-                 penalty_weight=0.1, penalty_mode="global",
-                 total_loss_weight=1.0, penalty_scale=1.0):
+    def __init__(self, layer_weights, distance_type="MSE", lambda_val=20):
         super().__init__()
         self.layer_weights = layer_weights
-        self.base_loss_fn = base_loss_fn or DifferentiableHungarianLoss()
-        self.penalty_weight = penalty_weight
-        self.penalty_mode = penalty_mode  # "none", "per_layer", "global"
-        self.total_loss_weight = total_loss_weight
-        self.penalty_scale = penalty_scale
+        self.distance_type = distance_type
+        self.lambda_val = lambda_val
 
     def forward(self, multi_layer_latents, inv_perm_A=None, inv_perm_B=None):
-        """
-        Calculates the weighted sum of Hungarian losses over multiple layers of
-        latent features. If enabled, adds cosine similarity penalty between
-        predicted matching and identity matrix.
-        """
+        assert len(multi_layer_latents) == len(self.layer_weights), \
+            "The number of latent layers and weights must match"
+
+        num_cells = multi_layer_latents[0].shape[1]
+        latent_dim = multi_layer_latents[0].shape[2:].numel()
+        device = multi_layer_latents[0].device
+
         total_loss = 0
-        similarity_penalty = 0
-        match_info = None
+        combined_cost_matrix = torch.zeros((num_cells, num_cells), device=device)
 
+        params = {"lambda": self.lambda_val}
         for weight, layer_latent in zip(self.layer_weights, multi_layer_latents):
-            loss, info = self.base_loss_fn(layer_latent, inv_perm_A=inv_perm_A, inv_perm_B=inv_perm_B)
+            # Calculate latent_dim specific to this layer
+            current_latent_dim = layer_latent.shape[2:].numel()
+
+            latent_A_layer = layer_latent[0].view(num_cells, current_latent_dim)
+            latent_B_layer = layer_latent[1].view(num_cells, current_latent_dim)
+
+            # It will only work when
+            cost = compute_distance_matrix(latent_A_layer, latent_B_layer, self.distance_type)
+            combined_cost_matrix += weight * cost
+
+            # Per-layer individual loss (still using Hungarian matching)
+            predicted_matching = LAPSolver.apply(cost, params)
+            ideal_matching = torch.zeros_like(predicted_matching)
+            ideal_matching[inv_perm_A, inv_perm_B] = 1.0
+
+            loss = HammingLoss()(predicted_matching, ideal_matching)
             total_loss += weight * loss
-            match_info = info
 
-            if self.penalty_mode == "per_layer":
-                row_ind, col_ind = info
-                num_cells = len(row_ind)
-                device = layer_latent.device
+        # Final prediction using the combined cost matrix
+        final_predicted_matching = LAPSolver.apply(combined_cost_matrix, params)
+        col_ind = final_predicted_matching.argmax(dim=1).detach().cpu().numpy()
+        row_ind = np.arange(num_cells)
 
-                predicted_matching = torch.zeros((num_cells, num_cells), device=device)
-                predicted_matching[row_ind, col_ind] = 1.0
-                identity = torch.eye(num_cells, device=device)
-
-                cosine_sim = F.cosine_similarity(predicted_matching.flatten(), identity.flatten(), dim=0)
-                similarity_penalty += (1.0 - cosine_sim)
-
-        if self.penalty_mode == "global" and match_info is not None:
-            row_ind, col_ind = match_info
-            num_cells = len(row_ind)
-            device = multi_layer_latents[0].device
-
-            predicted_matching = torch.zeros((num_cells, num_cells), device=device)
-            predicted_matching[row_ind, col_ind] = 1.0
-            identity = torch.eye(num_cells, device=device)
-
-            cosine_sim = F.cosine_similarity(predicted_matching.flatten(), identity.flatten(), dim=0)
-            similarity_penalty = (1.0 - cosine_sim)
-
-        # scale penalty value
-        scaled_penalty = similarity_penalty * self.penalty_scale
-
-        if self.penalty_mode in ["per_layer", "global"]:
-            final_loss = self.total_loss_weight * total_loss + self.penalty_weight * scaled_penalty
-        else:
-            final_loss = self.total_loss_weight * total_loss
-
-        return final_loss, match_info
-
-    def set_total_loss_weight(self, new_weight):
-        """
-        Dynamically adjusts the weight of the total loss term (matching).
-        """
-        self.total_loss_weight = new_weight
-
-    def set_penalty_weight(self, new_weight):
-        """
-        Dynamically adjusts the weight of the similarity penalty term.
-        """
-        self.penalty_weight = new_weight
-
-    def set_penalty_scale(self, new_scale):
-        self.penalty_scale = new_scale
-
-
-
+        return total_loss, (row_ind, col_ind)
 
 def get_loss_criterion(name, weight=None, ignore_index=None, skip_last_target=False, pos_weight=None, window_size=7, alpha=0.2, **loss_kwargs):
 
@@ -295,16 +215,22 @@ def get_loss_criterion(name, weight=None, ignore_index=None, skip_last_target=Fa
 
     return loss
 
-def _create_loss(name, weight, ignore_index, pos_weight, alpha=0.2, window_size=5, return_msssim=False, **loss_kwargs):
+def _create_loss(name, weight, ignore_index, pos_weight, **loss_kwargs):
     logger.info(f"Creating loss function: {name}")
 
-    if name == 'BCEWithLogitsLoss':
-        return nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-    elif name == 'DifferentiableHungarianLoss':
-        return DifferentiableHungarianLoss()
+    if name == 'DifferentiableHungarianLoss':
+        distance_type = loss_kwargs.get("distance_type", "MSE")
+        lambda_val = loss_kwargs.get("lambda_val", 20)
+        return DifferentiableHungarianLoss(distance_type=distance_type, lambda_val=lambda_val)
+
     elif name == 'MultiLayerHungarianLoss':
         layer_weights = loss_kwargs.get("layer_weights", [0.5, 0.5])
-        base_loss = DifferentiableHungarianLoss()
-        return MultiLayerHungarianLoss(layer_weights=layer_weights, base_loss_fn=base_loss)
+        distance_type = loss_kwargs.get("distance_type", "MSE")
+        lambda_val = loss_kwargs.get("lambda_val", 20)
+        return MultiLayerHungarianLoss(
+            layer_weights=layer_weights,
+            distance_type=distance_type,
+            lambda_val=lambda_val
+        )
     else:
         raise RuntimeError(f"Unsupported loss function: '{name}'")
